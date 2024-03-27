@@ -4,6 +4,6 @@ RUN sudo dnf install -y ffmpeg-free
 
 WORKDIR /archiver
 
-COPY driver.sh .
+COPY archive-driver.sh .
 
-CMD ["bash", "driver.sh"]
+CMD ["bash", "archive-driver.sh"]

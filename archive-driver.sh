@@ -18,7 +18,7 @@ mkdir -p "$RECORDINGS_DIR"
 ffmpeg \
     -i "$STREAM_URL" \
     -f segment \
-    -segment_time 7200 \
+    -segment_time 3600 \
     -segment_atclocktime 1 \
     -strftime 1 \
     -c copy \
@@ -44,5 +44,5 @@ while true; do
         RECORDINGS_DIR="$NEW_RECORDINGS_DIR"
     fi
 
-    sleep 60
+    sleep 10
 done
