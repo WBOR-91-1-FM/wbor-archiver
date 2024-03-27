@@ -1,6 +1,6 @@
 FROM fedora:latest
 
-RUN sudo dnf install ffmpeg
+RUN sudo dnf install ffmpeg-free
 
 WORKDIR /archiver
 
