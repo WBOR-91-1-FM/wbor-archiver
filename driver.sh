@@ -2,12 +2,47 @@
 
 STREAM_URL="https://listen.wbor.org:8000/stream"
 
-# Directory to store recordings
-RECORDINGS_DIR="/archive"
+# Container for audio files. Match source!
+CONTAINER="mp3"
 
-# Loop to continuously record audio
+# Date at time of script start
+CURRENT_YEAR=$(date +%Y)
+CURRENT_MONTH=$(date +%m)
+CURRENT_DAY=$(date +%d)
+
+# Initial directory to store recordings
+RECORDINGS_DIR="/archive/$CURRENT_YEAR/$CURRENT_MONTH/$CURRENT_DAY"
+mkdir -p "$RECORDINGS_DIR"
+
+# Start ffmpeg - 1hr recordings
+ffmpeg \
+    -i "$STREAM_URL" \
+    -f segment \
+    -segment_time 7200 \
+    -segment_atclocktime 1 \
+    -strftime 1 \
+    -c copy \
+    "$RECORDINGS_DIR/stream_%Y-%m-%dT%H-%M-%SZ.$CONTAINER" &
+
+# Store PID of ffmpeg
+FFMPEG_PID=$!
+
+# Continuously update directory structure
 while true; do
-    TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
-    ffmpeg -i "$STREAM_URL" -t 1800 -acodec copy "$RECORDINGS_DIR/$TIMESTAMP.mp3"
-    sleep 1800  # Wait for 30 minutes
+    NEW_YEAR=$(date +%Y)
+    NEW_MONTH=$(date +%m)
+    NEW_DAY=$(date +%d)
+
+    NEW_RECORDINGS_DIR="/archive/$NEW_YEAR/$NEW_MONTH/$NEW_DAY"
+
+    # Create directory if it doesn't exist
+    mkdir -p "$NEW_RECORDINGS_DIR"
+
+    # If directory has changed, move recording
+    if [ "$NEW_RECORDINGS_DIR" != "$RECORDINGS_DIR" ]; then
+        mv "$RECORDINGS_DIR"/* "$NEW_RECORDINGS_DIR"/
+        RECORDINGS_DIR="$NEW_RECORDINGS_DIR"
+    fi
+
+    sleep 60
 done
