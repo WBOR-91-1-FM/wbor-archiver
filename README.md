@@ -3,6 +3,9 @@
 * Micro gaps between recordings, so no seamless playback... not sure how to fix
 * Auto prune recordings older than 180 days
 
+# Bugs
+* Folder organization not working
+
 # Development
 Build: `podman build -t archiver .`
 Run image: `podman run -d --name archiver -v /archive:/archive --restart=always archiver`
