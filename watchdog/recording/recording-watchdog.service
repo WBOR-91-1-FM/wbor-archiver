@@ -1,0 +1,12 @@
+[Unit]
+Description=WBOR Archiver Recording Watchdog
+After=docker.service
+Requires=docker.service
+
+[Service]
+ExecStart=/path/to/watchdog.sh
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target

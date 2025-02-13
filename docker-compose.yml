@@ -1,0 +1,81 @@
+services:
+  recording:
+    build: 
+      context: ./recording
+    container_name: wbor-archiver-recorder
+    restart: unless-stopped
+    volumes:
+      - ./archive:/archive
+    environment:
+      - STATION_ID=WBOR
+      - STREAM_URL=https://listen.wbor.org/
+      - ARCHIVE_DIR=/archive
+      - SEGMENT_DURATION_SECONDS=300 # 5 minutes
+      - TZ=America/New_York
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s  # Give it some startup time before checking
+    networks:
+      - wbor-network
+
+  # api:
+  #   build:
+  #     context: ./backend
+  #   container_name: wbor-archiver-backend
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ./archive:/archive:ro  # The API only needs read-only permission
+  #   ports:
+  #     - "8000:8000"  # For local development
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
+  #     interval: 30s
+  #     timeout: 5s
+  #     retries: 3
+  #     start_period: 10s
+  #   networks:
+  #     - wbor-network
+
+  # web:
+  #   build:
+  #     context: ./web
+  #   container_name: wbor-archiver-web
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:80" # Direct local access for debugging
+  #   depends_on:
+  #     - api
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -f http://localhost:80/ || exit 1"]
+  #     interval: 30s
+  #     timeout: 5s
+  #     retries: 3
+  #     start_period: 10s
+  #   networks:
+  #     - wbor-network
+
+  # proxy:
+  #   build:
+  #     context: ./proxy
+  #   container_name: wbor-archiver-proxy
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #   depends_on:
+  #     - api
+  #     - web
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -f http://localhost:80/ || exit 1"]
+  #     interval: 30s
+  #     timeout: 5s
+  #     retries: 3
+  #     start_period: 10s
+  #   networks:
+  #     - wbor-network
+
+networks:
+  wbor-network:
+    driver: bridge
