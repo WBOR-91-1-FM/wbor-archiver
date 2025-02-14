@@ -23,21 +23,11 @@ Dedicated containers for each service done via Docker/Podman.
   * [x] Develop a watchdog script to monitor the recording service.
   * [ ] Trigger an alarm (email, Slack webhook, etc.) if recordings are not being generated.
 
-* [ ] **Storage Structure Implementation**
-  * [ ] Create logic to organize recordings into the specified directory hierarchy.
-  * [ ] Generate basic `.meta.json` files with timestamp info (placeholders for now).
-
-* [ ] **Deployment**
-  * [ ] Build and run the container using Podman.
-  * [ ] Configure automatic restart on failure (`--restart=always`).
-  * [ ] Set up logging for recording service errors and status.
-
 ### Phase 2
 
 #### API Development (FastAPI)
 
 * [ ] Set up FastAPI container for serving recordings.
-
 * [ ] Implement endpoints for:
   * [ ] Listing recordings with metadata.
   * [ ] Downloading recordings.
@@ -47,7 +37,6 @@ Dedicated containers for each service done via Docker/Podman.
 #### Web Interface (React)
 
 * [ ] Initialize React project optimized for mobile.
-
 * [ ] Build basic navigation UI:
   * [ ] Date-based filtering (calendar picker).
   * [ ] Basic search functionality (by date, show name if metadata exists).
@@ -55,24 +44,14 @@ Dedicated containers for each service done via Docker/Podman.
 * [ ] Add admin panel to manage recordings (delete/hide feature).
 * [ ] Test for mobile responsiveness.
 
-#### Metadata Enrichment
-
-* [ ] Design metadata format for `.meta.json` (shows, DJs, songs).
-
-* [ ] Implement optional Spinitron API integration to enrich metadata.
-* [ ] Automate metadata generation post-recording (if feasible).
-
 ### Networking & Security
 
 * [ ] Configure reverse proxy (NGINX or Caddy) for `https://archive.wbor.org`.
-
-* [ ] Restrict access to on-campus IP ranges.
 * [ ] Secure admin API endpoints (simple key-based auth or IP whitelisting).
 
 ### Monitoring & Alarms
 
 * [ ] Implement monitoring dashboard or simple status page.
-
 * [ ] Set up real-time alerts for:
   * [ ] Failed recordings.
   * [ ] API downtime.

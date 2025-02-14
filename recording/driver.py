@@ -3,7 +3,7 @@ import subprocess
 import logging
 import pytz
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -52,7 +52,7 @@ def main():
         remainder = seconds_since_midnight % SEGMENT_DURATION_SECONDS
         if remainder:
             sleep_time = SEGMENT_DURATION_SECONDS - remainder
-            boundary_time = now + time.timedelta(seconds=sleep_time)
+            boundary_time = now + timedelta(seconds=sleep_time)
 
             logging.info(
                 f"Current time is {now.strftime('%Y-%m-%d_%H_%M_%S')}. "
