@@ -1,3 +1,21 @@
+"""
+This script captures a stream from a given URL and segments it into multiple files for archiving and playback.
+Files are segmented with future concatenation in mind, so gapless playback is possible. As a result, FFmpeg
+is unable to split the stream exactly at the segment boundary, but it will be very close (+/- some seconds).
+
+This is brittle in the sense that we're relying on FFmpeg's logging to determine when a segment is
+"complete"/has finished writing. If FFmpeg changes its logging format, this script may break.
+
+Furthermore, if FFmpeg is killed or crashes, this script does not handle errors gracefully. We're 
+relying on Docker's restart policy to restart the container (and spin up a new process) if it exits.
+Consequently, there will be a final `.temp` file that will never get renamed with `.mp3`. To address this,
+we could implement a cleanup process that runs periodically to rename any `.temp` files that are older
+than a certain threshold (e.g. 1 hour) to `.mp3` files, but this is not implemented at this time.
+
+This script is designed to be run as a long-running process, and will continue to capture the stream
+until it is manually stopped.
+"""
+
 import os
 import subprocess
 import re
@@ -8,7 +26,7 @@ import time
 from datetime import datetime, timedelta
 
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
 # Environment variables
@@ -27,30 +45,61 @@ except Exception as e:
     exit(1)
 
 
-def ffmpeg_business_logic(log_line):
+previous_segment_temp = None  # Path to the previous segment file
+
+
+def rename_temp_to_mp3(temp_path: str):
+    """
+    Replaces the .temp extension with .mp3 and renames the file.
+    Returns the new (final) path if successful, or None on error.
+    """
+    if not temp_path.endswith(".temp"):
+        return None
+
+    final_path = temp_path.rsplit(".temp", 1)[0] + ".mp3"
+    if os.path.exists(temp_path):
+        try:
+            os.rename(temp_path, final_path)
+            logging.info(f"[Monitor] Renamed '{temp_path}' -> '{final_path}'")
+            return final_path
+        except Exception as e:
+            logging.error(f"Failed to rename {temp_path} -> {final_path}: {e}")
+            return None
+    else:
+        logging.warning(f"[Monitor] Could not find file to rename: {temp_path}")
+        return None
+
+
+def ffmpeg_business_logic(log_line: str):
     """
     Test if the log line is an 'Opening' segment line and if so, mark the previous segment as complete.
     """
-    regex_opening = re.compile(r"Opening '(.+\.mp3)' for writing")
+    global previous_segment_temp
 
-    # Business logic: is this an 'Opening' segment line?
+    # Example: [segment @ ...] Opening '/archive/WBOR-2025-02-14_00_44_58.temp' for writing
+    regex_opening = re.compile(r"Opening '([^']+\.temp)' for writing")
     match = regex_opening.search(log_line)
     if match:
         new_segment_filename = match.group(1)
         logging.info(f"[Monitor] New segment detected: {new_segment_filename}")
+
         # At this point, we know the *previous* segment is fully written/closed
-        # Add logic to mark the old file as "complete."
+        # So we can rename it to .mp3
+        if previous_segment_temp:
+            rename_temp_to_mp3(previous_segment_temp)
+
+        # Update pointer to the new (current) segment
+        # If this is the first segment, previous_segment_temp will be None
+        previous_segment_temp = new_segment_filename
 
 
-def ffmpeg_log_handler(ffmpeg_process):
+def ffmpeg_log_handler(ffmpeg_process: subprocess.Popen):
     """
-    Handle FFmpeg's stderr line by line.
+    Read FFmpeg's stderr line by line, parse, and apply business logic.
 
-    Forwards the raw FFmpeg line to our logger and looks for 'Opening' lines that indicate a new segment has started.
+    (By default, FFmpeg prints most logging and progress messages to stderr)
     """
-    # By default, FFmpeg prints most logging and progress messages to stderr
     for line in ffmpeg_process.stderr:
-        # Handle the raw FFmpeg line, forwarding it to our logger and business logic
         logging.debug("[FFmpeg] %s", line.strip())
         ffmpeg_business_logic(line.strip())
 
@@ -79,7 +128,9 @@ def main():
         logging.error(f"Failed to create archive directory '{ARCHIVE_DIR}': {e}")
         exit(1)
 
-    pattern = os.path.join(ARCHIVE_DIR, f"{STATION_ID}-%Y-%m-%d_%H_%M_%S.mp3")
+    # Use .temp extension in the pattern
+    # e.g.: /archive/WBOR-2025-02-14_00_40_00.temp
+    pattern = os.path.join(ARCHIVE_DIR, f"{STATION_ID}-%Y-%m-%d_%H_%M_%S.temp")
 
     logging.info(f"Segment duration set to: {SEGMENT_DURATION_SECONDS} seconds")
     logging.info(f"Writing segments to pattern: {pattern}")
@@ -108,10 +159,14 @@ def main():
         "ffmpeg",
         "-i",
         STREAM_URL,
+        "-map",
+        "0:a",  # Map the audio stream explicitly since we're using `.temp` extension in pattern
         "-c:a",
-        "copy",  # Copy the stream directly (it's already MP3)
+        "copy",  # Copy the stream directly (already MP3)
         "-f",
         "segment",  # Use the segment muxer
+        "-segment_format",
+        "mp3",
         "-strftime",
         "1",  # Enable strftime placeholders, which is needed for the pattern
         "-segment_time",
