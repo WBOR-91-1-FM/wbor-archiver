@@ -1,26 +1,43 @@
 services:
   recording:
-    build: 
+    build:
       context: ./recording
     container_name: wbor-archiver-recorder
-    restart: unless-stopped
+    restart: always
     volumes:
       - ./archive:/archive
     environment:
-      - STATION_ID=WBOR
-      - STREAM_URL=https://listen.wbor.org/
-      - ARCHIVE_DIR=/archive
-      - SEGMENT_DURATION_SECONDS=300 # 5 minutes
-      - TZ=America/New_York
-    healthcheck:
-      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 120s  # Give it some startup time before checking
+      - STATION_ID
+      - STREAM_URL
+      - ARCHIVE_DIR
+      - SEGMENT_DURATION_SECONDS
+      - TZ
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m" # Max log file size before rotation (50MB)
+        max-file: "3" # Keep last 3 rotated log files
     networks:
       - wbor-network
-
+  
+  archive-watchdog:
+    build:
+      context: ./archive-watchdog
+    container_name: wbor-archiver-watchdog
+    restart: always
+    volumes:
+      - ./archive:/archive
+    environment:
+      - ARCHIVE_DIR
+      - SEGMENT_DURATION_SECONDS
+      - TZ
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m" # Max log file size before rotation (50MB)
+        max-file: "3" # Keep last 3 rotated log files
+    networks:
+      - wbor-network
   # api:
   #   build:
   #     context: ./backend

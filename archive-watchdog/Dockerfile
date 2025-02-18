@@ -4,9 +4,7 @@ FROM python:3.12
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install ffmpeg
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ffmpeg
 
 # Working directory in the container
 WORKDIR /app
@@ -18,4 +16,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Run the recording service
-CMD ["python", "recording-driver.py"]
+CMD ["python", "file-watchdog.py"]
