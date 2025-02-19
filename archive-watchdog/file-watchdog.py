@@ -3,13 +3,18 @@ This watchdog script monitors the archive directory for `.temp` files being rena
 that a new recording segment has been completed. It then dynamically moves the file to the appropriate directory based on its
 ISO 8601 UTC timestamp (parsed from the filename), and handles any file conflicts by appending a counter to the filename.
 
-If two conflicting file names are detected, the script checks equality of the files. If they are identical, it
-deletes the duplicate. If they are different, it appends a counter to the filename until a unique name is found.
+If two conflicting file names are detected, the script checks equality of the files. If they are identical (via MD5 hash 
+comparison), it deletes the duplicate. If they are different, it appends a counter to the filename until a unique name is found.
+Not quite sure how to handle the case where the files are different but have the same name - this is a rare edge case. Perhaps
+trigger a manual review in this case? And don't serve the new file until the review is complete.
 
 Thus, the final syntax will be `{STATION_ID}-YYYY-MM-DDTHH:MM:SSZ.mp3`, or `{STATION_ID}-YYYY-MM-DDTHH:MM:SSZ-{counter}.mp3`
 if a conflict is detected.
 
-If a file is renamed to `.mp3` but does not match the expected filename format, it is moved to an "unmatched" directory.
+If a file is renamed to `.mp3` but does not match the expected filename format, it is moved to an "unmatched" directory with
+the name set in the configuration.
+
+After moving the file, the watchdog script should notify the backend so that it can handle the new segment.
 """
 
 import time
