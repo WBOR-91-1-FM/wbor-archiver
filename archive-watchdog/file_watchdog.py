@@ -1,31 +1,34 @@
 """
-This watchdog script monitors the archive directory for `.temp` files being renamed to `.mp3` files, which indicates
-that a new recording segment has been completed. It then dynamically moves the file to the appropriate directory based on its
-ISO 8601 UTC timestamp (parsed from the filename), and handles any file conflicts by appending a counter to the filename.
+This watchdog script monitors the archive directory for `.temp` files being renamed to `.mp3` 
+files, which indicates that a new recording segment has been completed. It then dynamically moves
+the file to the appropriate directory based on its ISO 8601 UTC timestamp (parsed from the 
+filename), and handles any file conflicts by appending a counter to the filename.
 
-If two conflicting file names are detected, the script checks equality of the files. If they are identical (via MD5 hash 
-comparison), it deletes the duplicate. If they are different, it appends a counter to the filename until a unique name is found.
-Not quite sure how to handle the case where the files are different but have the same name - this is a rare edge case. Perhaps
+If two conflicting file names are detected, the script checks equality of the files. If they 
+are identical (via MD5 hash comparison), it deletes the duplicate. If they are different, it 
+appends a counter to the filename until a unique name is found. Not quite sure how to handle the
+case where the files are different but have the same name - this is a rare edge case. Perhaps
 trigger a manual review in this case? And don't serve the new file until the review is complete.
 
-Thus, the final syntax will be `{STATION_ID}-YYYY-MM-DDTHH:MM:SSZ.mp3`, or `{STATION_ID}-YYYY-MM-DDTHH:MM:SSZ-{counter}.mp3`
-if a conflict is detected.
+Thus, the final syntax will be `{STATION_ID}-YYYY-MM-DDTHH:MM:SSZ.mp3`, or 
+`{STATION_ID}-YYYY-MM-DDTHH:MM:SSZ-{counter}.mp3` if a conflict is detected.
 
-If a file is renamed to `.mp3` but does not match the expected filename format, it is moved to an "unmatched" directory with
-the name set in the configuration.
+If a file is renamed to `.mp3` but does not match the expected filename format, it is moved to
+an "unmatched" directory with the name set in the configuration.
 
-After moving the file, the watchdog script should notify the backend so that it can handle the new segment.
+After moving the file, the watchdog script should notify the backend so that it can handle the new
+segment.
 """
 
 import time
 import os
+import sys
 import re
 import logging
-import pytz
 import hashlib
-import filecmp
 import fcntl
 from contextlib import contextmanager
+import pytz
 from dotenv import load_dotenv
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -33,7 +36,10 @@ from watchdog.events import FileSystemEventHandler
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
-    format="%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d in %(funcName)s()] - %(message)s",
+    format=(
+        "%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d in %(funcName)s()] - "
+        "%(message)s",
+    ),
 )
 
 # Load environment variables from .env file if present
@@ -56,17 +62,22 @@ try:
     TZ = pytz.UTC
 
     logging.info(
-        f"Configuration loaded successfully: ARCHIVE_DIR={ARCHIVE_DIR}, SEGMENT_DURATION_SECONDS={SEGMENT_DURATION_SECONDS}, UNMATCHED_DIR={UNMATCHED_DIR}"
+        "Configuration loaded successfully:"
+        "ARCHIVE_DIR=%s, SEGMENT_DURATION_SECONDS=%s, UNMATCHED_DIR=%s",
+        ARCHIVE_DIR,
+        SEGMENT_DURATION_SECONDS,
+        UNMATCHED_DIR,
     )
-except Exception as e:
-    logging.error(f"Failed to load environment variables: {e}")
-    exit(1)
+except (ValueError, AttributeError, TypeError) as e:
+    logging.error("Failed to load environment variables: %s", e)
+    sys.exit(1)
 
 # Match ISO 8601 UTC timestamped filenames:
 # Expected format: `{STATION_ID}-YYYY-MM-DDTHH:MM:SSZ.mp3`
 # Optionally, a conflict counter may be appended: e.g. `-1`, `-2`, etc.
 FILENAME_REGEX = re.compile(
-    r"^(?P<station_id>.+)-(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})T(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2})Z(?:-(?P<counter>\d+))?\.mp3$"
+    r"^(?P<station_id>.+)-(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})T"
+    r"(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2})Z(?:-(?P<counter>\d+))?\.mp3$"
 )
 
 
@@ -82,8 +93,8 @@ def compute_file_hash(file_path, block_size=65536):
                 if not buf:
                     break
                 hasher.update(buf)
-    except Exception as e:
-        logging.error(f"Error computing hash for {file_path}: {e}")
+    except (OSError, IOError) as e:
+        logging.error("Error computing hash for %s: %s", file_path, e)
         return None
     return hasher.hexdigest()
 
@@ -94,7 +105,7 @@ def acquire_lock(lock_file_path):
     Context manager to acquire an exclusive lock on a file.
     """
     # Open (or create) the lock file.
-    with open(lock_file_path, "w") as lock_file:
+    with open(lock_file_path, "w", encoding="utf-8") as lock_file:
         try:
             fcntl.flock(lock_file, fcntl.LOCK_EX)
             yield
@@ -103,14 +114,32 @@ def acquire_lock(lock_file_path):
 
 
 class ArchiveHandler(FileSystemEventHandler):
+    """
+    Object to handle file system events in the archive directory.
+
+    This class overrides the `on_moved` method to handle file renames.
+
+    The `on_moved` method is triggered when a file or directory is moved or renamed. We're
+    interested in `.temp` files being renamed to `.mp3`.
+
+    If the file matches the expected format, it is moved to the appropriate directory based on
+    its timestamp under the directory structure `{ARCHIVE_DIR}/{year}/{month}/{day}` (in UTC).
+
+    If a file is renamed to `.mp3` but does not match the expected filename format, it is moved to
+    an "unmatched" directory with the name set in the configuration.
+    """
+
     def on_moved(self, event):
         """
-        Triggered when a file or directory is moved or renamed. We're interested in `.temp` files being renamed to `.mp3`.
-        If the file matches the expected format, it is moved to the appropriate directory based on its timestamp under
-        the directory structure `{ARCHIVE_DIR}/{year}/{month}/{day}` (in UTC).
+        Triggered when a file or directory is moved or renamed. We're interested in `.temp` files
+        being renamed to `.mp3`.
+
+        If the file matches the expected format, it is moved to the appropriate directory based on
+        its timestamp under the directory structure `{ARCHIVE_DIR}/{year}/{month}/{day}` (in UTC).
 
         Parameters:
-        - event (FileSystemEvent): The event object containing details about the move/rename operation.
+        - event (FileSystemEvent): The event object containing details about the move/rename
+        operation.
         """
         if event.is_directory:
             return
@@ -121,7 +150,7 @@ class ArchiveHandler(FileSystemEventHandler):
         # Process only .temp -> .mp3 renames
         if src_ext == ".temp" and dst_ext == ".mp3":
             logging.debug(
-                f"File renamed from `{event.src_path}` to `{event.dest_path}`"
+                "File renamed from `%s` to `%s`", event.src_path, event.dest_path
             )
             filename = os.path.basename(event.dest_path)
 
@@ -131,7 +160,9 @@ class ArchiveHandler(FileSystemEventHandler):
                 # If the filename doesn't match, move it to the UNMATCHED_DIR directory.
                 target_dir = os.path.join(ARCHIVE_DIR, UNMATCHED_DIR)
                 logging.warning(
-                    f"Filename `{filename}` does not match expected format. Moving to `UNMATCHED_DIR` folder."
+                    "Filename `%s` does not match expected format. "
+                    "Moving to `UNMATCHED_DIR` folder.",
+                    filename,
                 )
             else:
                 # Build the directory path based on the timestamp (UTC).
@@ -143,8 +174,8 @@ class ArchiveHandler(FileSystemEventHandler):
             # Ensure the target directory exists.
             try:
                 os.makedirs(target_dir, exist_ok=True)
-            except Exception as e:
-                logging.error(f"Failed to create directory `{target_dir}`: {e}")
+            except OSError as e:
+                logging.error("Failed to create directory `%s`: %s", target_dir, e)
                 return
 
             # Define a lock file within the target directory.
@@ -163,17 +194,21 @@ class ArchiveHandler(FileSystemEventHandler):
                         existing_file_hash = compute_file_hash(new_location)
                         if new_file_hash is None or existing_file_hash is None:
                             logging.error(
-                                f"Could not compute file hash for comparison of `{filename}`."
+                                "Could not compute file hash for comparison of `%s`.",
+                                filename,
                             )
                             return
                         if new_file_hash == existing_file_hash:
                             logging.info(
-                                f"File `{filename}` already exists and is identical in content. No action taken."
+                                "File `%s` already exists and is identical in content. "
+                                "No action taken.",
+                                filename,
                             )
                             return
                         else:
                             logging.error(
-                                f"File conflict: `{filename}` exists and differs from the new file."
+                                "File conflict: `%s` exists and differs from the new file.",
+                                filename,
                             )
                             # Append a counter suffix until a unique name is found.
                             base, ext = os.path.splitext(filename)
@@ -186,31 +221,40 @@ class ArchiveHandler(FileSystemEventHandler):
                                 counter += 1
                             new_location = temp_location
                             logging.info(
-                                f"Renaming conflicting file to `{new_location}`."
+                                "Renaming conflicting file to `%s`.", new_location
                             )
                             # E.g.: `WBOR-2025-02-14T00:40:00Z-1.mp3`
-                    except Exception as e:
-                        logging.error(f"Error comparing files for `{filename}`: {e}")
+                    except (OSError, IOError) as e:
+                        logging.error("Error comparing files for `%s`: %s", filename, e)
                         return
 
                 # Use os.replace for atomic move.
                 try:
                     os.replace(event.dest_path, new_location)
-                    logging.info(f"Moved file to `{new_location}`")
+                    logging.info("Moved file to `%s`", new_location)
                     # At this point, the watchdog should notify the backend
-                except Exception as e:
+                except OSError as e:
                     logging.error(
-                        f"Failed to move file `{event.dest_path}` to `{new_location}`: {e}"
+                        "Failed to move file `%s` to `%s`: %s",
+                        event.dest_path,
+                        new_location,
+                        e,
                     )
 
 
 def main():
+    """
+    Entry point for the watchdog script. Sets up the observer to watch for file renames in the
+    archive directory.
+
+    The observer is started and runs indefinitely until a keyboard interrupt is received.
+    """
     event_handler = ArchiveHandler()
     observer = Observer()
     observer.schedule(event_handler, ARCHIVE_DIR, recursive=False)
     observer.start()
 
-    logging.info(f"Watching for `.temp` -> `.mp3` renames in `{ARCHIVE_DIR}` ...")
+    logging.info("Watching for `.temp` -> `.mp3` renames in `%s` ...", ARCHIVE_DIR)
     try:
         while True:
             time.sleep(1)

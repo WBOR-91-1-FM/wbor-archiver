@@ -16,4 +16,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Run the recording service
-CMD ["python", "file-watchdog.py"]
+CMD ["python", "file_watchdog.py"]

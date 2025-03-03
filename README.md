@@ -15,6 +15,7 @@ Dedicated containers for each service. Written in Docker but compatible with Pod
 
 ### Development Tasks
 
+* [ ] Makefile
 * [x] Implement continuous recording logic using `ffmpeg`
 * [ ] Set up FastAPI container for serving recordings
 * [ ] Implement endpoints for:

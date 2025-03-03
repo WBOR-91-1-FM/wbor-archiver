@@ -18,4 +18,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Run the recording service
-CMD ["python", "recording-driver.py"]
+CMD ["python", "recording_driver.py"]
