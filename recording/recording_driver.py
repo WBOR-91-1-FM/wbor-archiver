@@ -34,12 +34,14 @@ from datetime import datetime, timedelta
 import pytz
 from dotenv import load_dotenv
 
+FORMAT_STR = (
+    "%(asctime)s - %(levelname)s - "
+    "[%(filename)s:%(lineno)d in %(funcName)s()] - %(message)s"
+)
+
 logging.basicConfig(
     level=logging.DEBUG,
-    format=(
-        "%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d in %(funcName)s()] - "
-        "%(message)s",
-    ),
+    format=FORMAT_STR,
 )
 
 load_dotenv()
@@ -136,11 +138,17 @@ def ffmpeg_log_handler(ffmpeg_process: subprocess.Popen, previous_segment_temp: 
 
     (By default, FFmpeg prints most logging and progress messages to stderr)
     """
-    for line in ffmpeg_process.stderr:
-        logging.debug("%s", line.strip())
-        previous_segment_temp = ffmpeg_business_logic(
-            line.strip(), previous_segment_temp
-        )
+    try:
+        while ffmpeg_process.poll() is None:  # Check if process is still running
+            line = ffmpeg_process.stderr.readline()
+            if not line:
+                break  # Stop reading if there's no more output
+            logging.debug("%s", line.strip())
+            previous_segment_temp = ffmpeg_business_logic(
+                line.strip(), previous_segment_temp
+            )
+    except ValueError:
+        logging.warning("FFmpeg log handler tried to read from a closed stderr stream.")
 
 
 def main():
@@ -181,16 +189,25 @@ def main():
         now = datetime.now(TZ)
         seconds_since_midnight = now.hour * 3600 + now.minute * 60 + now.second
         remainder = seconds_since_midnight % SEGMENT_DURATION_SECONDS
-        if remainder:
-            sleep_time = SEGMENT_DURATION_SECONDS - remainder
+
+        if remainder or now.second != 0:
+            # Calculate sleep time to reach the next segment boundary
+            sleep_time = (
+                SEGMENT_DURATION_SECONDS - remainder
+                if remainder
+                else SEGMENT_DURATION_SECONDS
+            )
             boundary_time = now + timedelta(seconds=sleep_time)
+
             logging.info(
                 "Current UTC time is %s. Sleeping until next segment boundary at %s",
                 now.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 boundary_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
             )
+
             time.sleep(sleep_time)
             logging.info("Segment boundary reached. Starting recording...")
+
     except (ValueError, OverflowError) as e:
         logging.error("Error in time calculation to next boundary: %s", e)
         sys.exit(1)
@@ -228,25 +245,30 @@ def main():
 
     try:
         # Spawn the FFmpeg process
-        with subprocess.Popen(
+        ffmpeg_process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-        ) as ffmpeg_process:
-            # Start a thread to monitor FFmpeg's output
-            previous_segment_temp = None
-            t = threading.Thread(
-                target=ffmpeg_log_handler,
-                args=(ffmpeg_process, previous_segment_temp),
-                daemon=True,
-            )
-            t.start()
+            bufsize=1,  # Line buffering
+            universal_newlines=True,  # Ensures text mode is handled properly
+        )
+
+        # Start a thread to monitor FFmpeg's output
+        previous_segment_temp = None
+        t = threading.Thread(
+            target=ffmpeg_log_handler,
+            args=(ffmpeg_process, previous_segment_temp),
+            daemon=True,
+        )
+        t.start()
 
         # Wait for FFmpeg to exit
         ffmpeg_returncode = ffmpeg_process.wait()
+        logging.info("FFmpeg process exited with code: %d", ffmpeg_returncode)
+
         if ffmpeg_returncode != 0:
-            logging.error("FFmpeg exited with a non-zero code: %d", ffmpeg_returncode)
+            logging.error("FFmpeg exited unexpectedly. Terminating log handler thread.")
             sys.exit(1)
     except FileNotFoundError:
         logging.error(
