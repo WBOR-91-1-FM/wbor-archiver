@@ -1,8 +1,5 @@
 FROM python:3.12
 
-# Set the environment variable so tzdata won't prompt for input
-ENV DEBIAN_FRONTEND=noninteractive
-
 # Install ffmpeg
 RUN apt-get update && apt-get install -y ffmpeg
 

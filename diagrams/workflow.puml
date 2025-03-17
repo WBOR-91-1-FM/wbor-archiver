@@ -1,0 +1,25 @@
+@startuml Archiver Workflow
+
+start
+
+:Recording Service captures audio;
+:Segment audio with FFmpeg;
+:Store segment in Archive Directory;
+
+if (Segment completed?) then (yes)
+    :Archive Watchdog organizes segment in appropriate subdirectory;
+    :Notify Backend API;
+    :Index segment metadata in Postgres;
+endif
+
+:User requests a recording;
+if (Single segment requested?) then (yes)
+    :Serve recording directly;
+else (no)
+    :Concatenate segments with FFmpeg;
+    :Serve gapless recording;
+endif
+
+stop
+
+@enduml

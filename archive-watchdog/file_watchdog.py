@@ -1,23 +1,25 @@
 """
-This watchdog script monitors the archive directory for `.temp` files being renamed to `.mp3` 
-files, which indicates that a new recording segment has been completed. It then dynamically moves
-the file to the appropriate directory based on its ISO 8601 UTC timestamp (parsed from the 
-filename), and handles any file conflicts by appending a counter to the filename.
+Monitors the archive directory for `.temp` -> `.mp3` renaming, which indicates
+that a new recording segment has been completed. Then, dynamically move the file
+to the appropriate directory based on the ISO 8601 UTC timestamp parsed from the
+filename. Handles file conflicts by appending a counter to the filename--
 
-If two conflicting file names are detected, the script checks equality of the files. If they 
-are identical (via MD5 hash comparison), it deletes the duplicate. If they are different, it 
-appends a counter to the filename until a unique name is found. Not quite sure how to handle the
-case where the files are different but have the same name - this is a rare edge case. Perhaps
-trigger a manual review in this case? And don't serve the new file until the review is complete.
+If two conflicting file names are detected, checks equality of the files. If
+identical (via hash comparison), deletes the newer duplicate. If different,
+appends a counter to the filename to make a unique filename.
 
-Thus, the final syntax will be `{STATION_ID}-YYYY-MM-DDTHH:MM:SSZ.mp3`, or 
-`{STATION_ID}-YYYY-MM-DDTHH:MM:SSZ-{counter}.mp3` if a conflict is detected.
+Not quite sure how to handle the case where the files are differen (in content)
+but have the same filename - this is a rare edge case. Perhaps trigger a manual
+review in this case? And don't serve the new file until the review is complete.
 
-If a file is renamed to `.mp3` but does not match the expected filename format, it is moved to
-an "unmatched" directory with the name set in the configuration.
+The final syntax will be `{STATION_ID}-YYYY-MM-DDTHH:MM:SSZ.mp3`, or
+`{STATION_ID}-YYYY-MM-DDTHH:MM:SSZ-{counter}.mp3` (if a conflict is detected).
 
-After moving the file, the watchdog script should notify the backend so that it can handle the new
-segment.
+If a file is renamed to `.mp3` but does not match the expected filename format,
+it is moved to an "unmatched" directory (defined in config).
+
+After moving the file, the watchdog script notifies the backend so that it can
+index the new segment.
 """
 
 import time
@@ -37,8 +39,7 @@ from watchdog.events import FileSystemEventHandler
 logging.basicConfig(
     level=logging.DEBUG,
     format=(
-        "%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d in %(funcName)s()] - "
-        "%(message)s",
+        "%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d in %(funcName)s()] - %(message)s",
     ),
 )
 
@@ -115,146 +116,158 @@ def acquire_lock(lock_file_path):
 
 class ArchiveHandler(FileSystemEventHandler):
     """
-    Object to handle file system events in the archive directory.
+    Handle file system events in our archive directory.
 
     This class overrides the `on_moved` method to handle file renames.
 
-    The `on_moved` method is triggered when a file or directory is moved or renamed. We're
-    interested in `.temp` files being renamed to `.mp3`.
+    `on_moved` is triggered when a file or directory is moved or renamed. We're
+    interested in `.temp` files -> `.mp3`.
 
-    If the file matches the expected format, it is moved to the appropriate directory based on
-    its timestamp under the directory structure `{ARCHIVE_DIR}/{year}/{month}/{day}` (in UTC).
+    If the file matches the expected format, it is moved to the appropriate
+    directory based on its timestamp under the directory structure:
+        `{ARCHIVE_DIR}/{year}/{month}/{day}` (in UTC).
 
-    If a file is renamed to `.mp3` but does not match the expected filename format, it is moved to
-    an "unmatched" directory with the name set in the configuration.
+    If a file is renamed to `.mp3` but *does not* match the expected filename
+    format, it is moved to an "unmatched" directory (UNMATCHED_DIR).
     """
 
     def on_moved(self, event):
         """
-        Triggered when a file or directory is moved or renamed. We're interested in `.temp` files
-        being renamed to `.mp3`.
+        Triggered when a file or directory is moved or renamed. We're interested
+        in `.temp` files -> `.mp3`.
 
-        If the file matches the expected format, it is moved to the appropriate directory based on
-        its timestamp under the directory structure `{ARCHIVE_DIR}/{year}/{month}/{day}` (in UTC).
+        If the file matches the expected format, move to the appropriate
+        directory based on its timestamp under the directory structure:
+            `{ARCHIVE_DIR}/{year}/{month}/{day}` (in UTC).
 
         Parameters:
-        - event (FileSystemEvent): The event object containing details about the move/rename
-        operation.
+        - event (FileSystemEvent): The event object containing details about the
+            move/rename operation.
         """
         if event.is_directory:
+            # Ignore directory moves
             return
 
         src_ext = os.path.splitext(event.src_path)[1]
         dst_ext = os.path.splitext(event.dest_path)[1]
 
-        # Process only .temp -> .mp3 renames
-        if src_ext == ".temp" and dst_ext == ".mp3":
-            logging.debug(
-                "File renamed from `%s` to `%s`", event.src_path, event.dest_path
+        if not src_ext == ".temp" and dst_ext == ".mp3":
+            logging.error(
+                "Unexpected file extension change: `%s` -> `%s`",
+                src_ext,
+                dst_ext,
             )
-            filename = os.path.basename(event.dest_path)
+            return
 
-            # Attempt to match the filename to the expected ISO UTC pattern.
-            match = FILENAME_REGEX.match(filename)
-            if not match:
-                # If the filename doesn't match, move it to the UNMATCHED_DIR directory.
-                target_dir = os.path.join(ARCHIVE_DIR, UNMATCHED_DIR)
-                logging.warning(
-                    "Filename `%s` does not match expected format. "
-                    "Moving to `UNMATCHED_DIR` folder.",
-                    filename,
-                )
-            else:
-                # Build the directory path based on the timestamp (UTC).
-                year = match.group("year")
-                month = match.group("month")
-                day = match.group("day")
-                target_dir = os.path.join(ARCHIVE_DIR, year, month, day)
+        logging.debug("File renamed `%s` -> `%s`", event.src_path, event.dest_path)
+        filename = os.path.basename(event.dest_path)
 
-            # Ensure the target directory exists.
-            try:
-                os.makedirs(target_dir, exist_ok=True)
-            except OSError as e:
-                logging.error("Failed to create directory `%s`: %s", target_dir, e)
-                return
+        # Attempt to match the filename to the expected ISO UTC pattern
+        match = FILENAME_REGEX.match(filename)
+        if not match:
+            target_dir = os.path.join(ARCHIVE_DIR, UNMATCHED_DIR)
+            logging.warning(
+                "Filename `%s` does not match expected format. "
+                "Moving to `UNMATCHED_DIR` folder.",
+                filename,
+            )
+        else:
+            # Build the directory path based on the timestamp (UTC)
+            year = match.group("year")
+            month = match.group("month")
+            day = match.group("day")
+            target_dir = os.path.join(ARCHIVE_DIR, year, month, day)
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+        except OSError as e:
+            logging.error("Failed to create directory `%s`: %s", target_dir, e)
+            return
 
-            # Define a lock file within the target directory.
-            lock_file_path = os.path.join(target_dir, ".lock")
-
-            # Use the lock to ensure atomic conflict-checking and renaming.
-            with acquire_lock(lock_file_path):
-                # (After `with acquire_lock(lock_file_path)` finishes, the lock is released.)
-
-                new_location = os.path.join(target_dir, filename)
-
-                if os.path.exists(new_location):
-                    try:
-                        # Compute hashes for both files.
-                        new_file_hash = compute_file_hash(event.dest_path)
-                        existing_file_hash = compute_file_hash(new_location)
-                        if new_file_hash is None or existing_file_hash is None:
-                            logging.error(
-                                "Could not compute file hash for comparison of `%s`.",
-                                filename,
-                            )
-                            return
-                        if new_file_hash == existing_file_hash:
-                            logging.info(
-                                "File `%s` already exists and is identical in content. "
-                                "No action taken.",
-                                filename,
-                            )
-                            return
-                        else:
-                            logging.error(
-                                "File conflict: `%s` exists and differs from the new file.",
-                                filename,
-                            )
-                            # Append a counter suffix until a unique name is found.
-                            base, ext = os.path.splitext(filename)
-                            counter = 1
-                            temp_location = new_location
-                            while os.path.exists(temp_location):
-                                temp_location = os.path.join(
-                                    target_dir, f"{base}-{counter}{ext}"
-                                )
-                                counter += 1
-                            new_location = temp_location
-                            logging.info(
-                                "Renaming conflicting file to `%s`.", new_location
-                            )
-                            # E.g.: `WBOR-2025-02-14T00:40:00Z-1.mp3`
-                    except (OSError, IOError) as e:
-                        logging.error("Error comparing files for `%s`: %s", filename, e)
+        # Use a lock to ensure atomic conflict-checking and renaming
+        lock_file_path = os.path.join(target_dir, ".lock")
+        with acquire_lock(lock_file_path):
+            # (After `with acquire_lock(lock_file_path)` finishes, the lock
+            # is released.)
+            new_location = os.path.join(target_dir, filename)
+            if os.path.exists(new_location):
+                # Conflict! Compute hashes for both files and compare
+                try:
+                    new_file_hash = compute_file_hash(event.dest_path)
+                    existing_file_hash = compute_file_hash(new_location)
+                    if new_file_hash is None or existing_file_hash is None:
+                        logging.error(
+                            "Could not compute file hash for comparison of `%s`.",
+                            filename,
+                        )
+                        return
+                    if new_file_hash == existing_file_hash:
+                        logging.warning(
+                            "File `%s` already exists and is identical in "
+                            "content. (No conflict). No action taken, "
+                            "but this is unexpected.",
+                            filename,
+                        )
                         return
 
-                # Use os.replace for atomic move.
-                try:
-                    os.replace(event.dest_path, new_location)
-                    logging.info("Moved file to `%s`", new_location)
-                    # At this point, the watchdog should notify the backend
-                except OSError as e:
                     logging.error(
-                        "Failed to move file `%s` to `%s`: %s",
-                        event.dest_path,
-                        new_location,
-                        e,
+                        "File conflict: path `%s` exists but differs from "
+                        "the new file. Adding a counter to the filename...",
+                        filename,
                     )
+                    base, ext = os.path.splitext(filename)
+                    counter = 1
+                    temp_location = new_location
+                    while os.path.exists(temp_location):
+                        temp_location = os.path.join(
+                            target_dir, f"{base}-{counter}{ext}"
+                        )
+                        counter += 1
+                    new_location = temp_location
+                    logging.info("Renaming conflicting file to `%s`.", new_location)
+                    # e.g.: `WBOR-2025-02-14T00:40:00Z-1.mp3`
+                except (OSError, IOError) as e:
+                    logging.error("Error comparing files for `%s`: %s", filename, e)
+                    return
+
+            # Now that conflicts are handled, perform atomic move to subdir
+            try:
+                os.replace(event.dest_path, new_location)
+                logging.info("Moved file to `%s`", new_location)
+                # TODO: notify the backend to index the new segment
+                # Pass in the new location and the timestamp as part of
+                # the message
+            except OSError as e:
+                # This is a critical error, as the file has been renamed but
+                # not moved. This could lead to data loss if the file is
+                # overwritten or left dangling in perpetuity.
+                logging.error(
+                    "Failed to move file `%s` to `%s`: %s",
+                    event.dest_path,
+                    new_location,
+                    e,
+                )
+                # Handle by moving the file to the unmatched directory
+                unmatched_dir = os.path.join(ARCHIVE_DIR, UNMATCHED_DIR)
+                logging.warning(
+                    "Moving file to unmatched directory `%s`", unmatched_dir
+                )
+                os.replace(event.dest_path, os.path.join(unmatched_dir, filename))
 
 
 def main():
     """
-    Entry point for the watchdog script. Sets up the observer to watch for file renames in the
-    archive directory.
+    Entrypoint. Sets up the observer to watch for file renames in the archive
+    directory.
 
-    The observer is started and runs indefinitely until a keyboard interrupt is received.
+    Runs indefinitely until a keyboard interrupt is received.
     """
     event_handler = ArchiveHandler()
     observer = Observer()
+    # `recursive=False` to only watch the top-level directory of the archive.
     observer.schedule(event_handler, ARCHIVE_DIR, recursive=False)
     observer.start()
 
-    logging.info("Watching for `.temp` -> `.mp3` renames in `%s` ...", ARCHIVE_DIR)
+    logging.info("Watching for `.temp` -> `.mp3` renames in `%s`", ARCHIVE_DIR)
     try:
         while True:
             time.sleep(1)
