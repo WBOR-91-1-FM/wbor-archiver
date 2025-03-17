@@ -34,13 +34,12 @@ import pytz
 from dotenv import load_dotenv
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from utils.mq_client import RabbitMQClient
 
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
-    format=(
-        "%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d in %(funcName)s()] - %(message)s",
-    ),
+    format="%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d in %(funcName)s()] - %(message)s",
 )
 
 # Load environment variables from .env file if present
@@ -62,7 +61,12 @@ try:
     # Use UTC timezone for consistency
     TZ = pytz.UTC
 
-    logging.info(
+    # RabbitMQ configuration - passed in from docker-compose.yml
+    RABBITMQ_HOST = os.getenv("RABBITMQ_HOST").strip()
+    RABBITMQ_EXCHANGE = os.getenv("RABBITMQ_EXCHANGE").strip()
+    RABBITMQ_QUEUE = os.getenv("RABBITMQ_QUEUE").strip()
+
+    logging.debug(
         "Configuration loaded successfully:"
         "ARCHIVE_DIR=%s, SEGMENT_DURATION_SECONDS=%s, UNMATCHED_DIR=%s",
         ARCHIVE_DIR,
@@ -80,6 +84,8 @@ FILENAME_REGEX = re.compile(
     r"^(?P<station_id>.+)-(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})T"
     r"(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2})Z(?:-(?P<counter>\d+))?\.mp3$"
 )
+
+RABBITMQ_CLIENT = RabbitMQClient()
 
 
 def compute_file_hash(file_path, block_size=65536):
@@ -233,9 +239,19 @@ class ArchiveHandler(FileSystemEventHandler):
             try:
                 os.replace(event.dest_path, new_location)
                 logging.info("Moved file to `%s`", new_location)
-                # TODO: notify the backend to index the new segment
-                # Pass in the new location and the timestamp as part of
-                # the message
+                RABBITMQ_CLIENT.send_message(
+                    {
+                        "filename": filename,
+                        "timestamp": {
+                            "year": match.group("year"),
+                            "month": match.group("month"),
+                            "day": match.group("day"),
+                            "hour": match.group("hour"),
+                            "minute": match.group("minute"),
+                            "second": match.group("second"),
+                        },
+                    }
+                )
             except OSError as e:
                 # This is a critical error, as the file has been renamed but
                 # not moved. This could lead to data loss if the file is
@@ -274,6 +290,9 @@ def main():
     except KeyboardInterrupt:
         logging.info("Stopping observer from keyboard interrupt")
         observer.stop()
+    finally:
+        RABBITMQ_CLIENT.close()  # Ensure RabbitMQ connection is closed properly
+        logging.info("RabbitMQ connection closed.")
     observer.join()
 
 

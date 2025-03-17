@@ -3,9 +3,9 @@ services:
     build:
       context: ./recording
     container_name: wbor-archiver-recorder
-    restart: always
+    restart: always # Ensure continuous recording
     volumes:
-      - ./archive:/archive
+      - ./archive:/archive # Mount the archive directory from the project folder
     environment:
       - STATION_ID
       - STREAM_URL
@@ -20,41 +20,68 @@ services:
     networks:
       - wbor-network
   
-  archive-watchdog:
+  watchdog:
     build:
       context: ./archive-watchdog
     container_name: wbor-archiver-watchdog
-    restart: always
+    restart: always # Like the recorder, ensure continuous monitoring
     volumes:
       - ./archive:/archive
     environment:
       - ARCHIVE_DIR
       - SEGMENT_DURATION_SECONDS
       - TZ
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_EXCHANGE=wbor-archiver-exchange
+      - RABBITMQ_QUEUE=recording-segments
     logging:
       driver: "json-file"
       options:
         max-size: "50m" # Max log file size before rotation (50MB)
         max-file: "3" # Keep last 3 rotated log files
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     networks:
       - wbor-network
-  # api:
-  #   build:
-  #     context: ./backend
-  #   container_name: wbor-archiver-backend
-  #   restart: unless-stopped
-  #   volumes:
-  #     - ./archive:/archive:ro  # The API only needs read-only permission
-  #   ports:
-  #     - "8000:8000"  # For local development
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
-  #     interval: 30s
-  #     timeout: 5s
-  #     retries: 3
-  #     start_period: 10s
-  #   networks:
-  #     - wbor-network
+
+  rabbitmq:
+    image: "rabbitmq:3-management"
+    container_name: wbor-archiver-mq
+    restart: always
+    ports:
+      - "15672:15672"  # Management UI
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 30s
+      retries: 5
+    networks:
+      - wbor-network
+
+  api:
+    build:
+      context: ./backend
+    container_name: wbor-archiver-backend
+    restart: unless-stopped
+    volumes:
+      - ./archive:/archive:ro  # The API only needs read-only permission
+    ports:
+      - "8000:8000"  # For local development
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - wbor-network
 
   # web:
   #   build:
@@ -63,8 +90,8 @@ services:
   #   restart: unless-stopped
   #   ports:
   #     - "3000:80" # Direct local access for debugging
-  #   depends_on:
-  #     - api
+  # depends_on:
+  #   - api
   #   healthcheck:
   #     test: ["CMD-SHELL", "curl -f http://localhost:80/ || exit 1"]
   #     interval: 30s

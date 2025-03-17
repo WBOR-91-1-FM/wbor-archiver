@@ -1,3 +1,4 @@
 watchdog
 pytz
 python-dotenv
+pika

@@ -32,9 +32,55 @@ TODO:
     - encoder
 """
 
+import os
+import sys
 from pathlib import Path
+import pytz
+import logging
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
+
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d in %(funcName)s()] - %(message)s",
+)
+
+# Load environment variables from .env file if present
+load_dotenv()
+
+try:
+    # Ensure environment variables are stripped of leading/trailing spaces
+    ARCHIVE_DIR = os.getenv("ARCHIVE_DIR", "/archive").strip()
+    UNMATCHED_DIR = "unmatched"
+
+    # Parse and validate SEGMENT_DURATION_SECONDS
+    segment_duration_str = os.getenv("SEGMENT_DURATION_SECONDS", "300").strip()
+    if not segment_duration_str.isdigit():
+        raise ValueError(
+            f"SEGMENT_DURATION_SECONDS must be an integer, got '{segment_duration_str}'"
+        )
+    SEGMENT_DURATION_SECONDS = int(segment_duration_str)
+
+    # Use UTC timezone for consistency
+    TZ = pytz.UTC
+
+    # RabbitMQ configuration - passed in from docker-compose.yml
+    RABBITMQ_HOST = os.getenv("RABBITMQ_HOST").strip()
+    RABBITMQ_EXCHANGE = os.getenv("RABBITMQ_EXCHANGE").strip()
+    RABBITMQ_QUEUE = os.getenv("RABBITMQ_QUEUE").strip()
+
+    logging.debug(
+        "Configuration loaded successfully:"
+        "ARCHIVE_DIR=%s, SEGMENT_DURATION_SECONDS=%s, UNMATCHED_DIR=%s",
+        ARCHIVE_DIR,
+        SEGMENT_DURATION_SECONDS,
+        UNMATCHED_DIR,
+    )
+except (ValueError, AttributeError, TypeError) as e:
+    logging.error("Failed to load environment variables: %s", e)
+    sys.exit(1)
 
 app = FastAPI()
 
@@ -46,6 +92,7 @@ def home():
     """
     Status check endpoint.
     """
+    logging.debug("Received status check request")
     return {"service": "WBOR Archiver API", "status": "ok"}
 
 

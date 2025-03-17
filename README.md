@@ -12,11 +12,34 @@ Dedicated containers for each service. Compatible with both Docker and Podman (w
 * **Database (Postgres)**: Store segment index and metadata info.
 * **Web interface (JavaScript, React):** User interface. A time-based availability heatmap is available to show, at a glance, where gaps in the archive exist.
 
+![Archiver Workflow](diagrams/png/Archiver%20Workflow.png)
+
+## Usage
+
+First, set up your `.env`. Copy the `.env.example` file to `.env` and fill in the necessary values.
+
+```bash
+cp .env.example .env
+```
+
+Spin up services by running `make` (note: you may need to install `make`, `docker`, and/or `podman`).
+
+```bash
+make
+```
+
+**Starting & Building:** `make`
+**Restarting:** `make restart`
+**Stopping:** `make down`
+**Logs:** `make logs`
+**Cleanup:** `make clean`
+
+**Note:** by default, the archive directory is `./archive`. As of now, to change this, edit the `docker-compose.yml` file (under the `volumes` section for `recording` and `archive-watchdog`).
+
 ## TO-DO
 
 ### Development Tasks
 
-* [ ] Makefile
 * [ ] Endpoints:
   * [ ] Listing recordings with metadata
   * [ ] Downloading recordings
@@ -40,11 +63,3 @@ Dedicated containers for each service. Compatible with both Docker and Podman (w
 * [ ] Set up real-time alerts for:
   * [ ] API downtime
   * [ ] Recording agent is not making recordings
-
-## Bugs
-
-## Development
-
-Build: `docker build -t wbor-archiver .`
-
-Run image: `docker run -d --name wbor-archiver -v /archive:/archive --restart=always wbor-archiver`

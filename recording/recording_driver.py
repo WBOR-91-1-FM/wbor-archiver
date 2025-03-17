@@ -70,7 +70,7 @@ try:
     # Use UTC timezone for consistency
     TZ = pytz.UTC
 
-    logging.info(
+    logging.debug(
         "Configuration loaded successfully: "
         "STATION_ID=%s, STREAM_URL=%s, ARCHIVE_DIR=%s, SEGMENT_DURATION_SECONDS=%d",
         STATION_ID,
@@ -87,6 +87,8 @@ PATTERN = os.path.join(ARCHIVE_DIR, f"{STATION_ID}-%Y-%m-%dT%H:%M:%SZ.temp")
 
 # Build the FFmpeg command
 CMD = [
+    "env",
+    "TZ=UTC",
     "ffmpeg",
     "-loglevel",
     "verbose",
@@ -131,7 +133,7 @@ def rename_temp_to_mp3(temp_path: str):
     try:
         final_path = temp_path.rsplit(".temp", 1)[0] + ".mp3"
         os.rename(temp_path, final_path)
-        logging.info("Renamed `%s` -> `%s`", temp_path, final_path)
+        logging.debug("Renamed `%s` -> `%s`", temp_path, final_path)
         return final_path
     except (OSError, subprocess.SubprocessError) as e:
         logging.error("Failed to rename `%s` -> `%s`: `%s`", temp_path, final_path, e)
