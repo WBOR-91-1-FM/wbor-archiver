@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "WBOR Archive Database",
+      "Group": "Servers",
+      "Host": "wbor-archiver-db",
+      "Port": 5432,
+      "Username": "postgres",
+      "Password": "postgres",
+      "SSLMode": "prefer",
+      "MaintenanceDB": "archive_db"
+    }
+  }
+}

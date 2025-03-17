@@ -42,7 +42,7 @@ import logging
 import pytz
 import pika
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, APIRouter
 from fastapi.responses import FileResponse
 
 # Configure logging
@@ -50,6 +50,8 @@ logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d in %(funcName)s()] - %(message)s",
 )
+
+logging.getLogger("pika").setLevel(logging.WARNING)
 
 # Load environment variables from .env file if present
 load_dotenv()
@@ -86,7 +88,34 @@ except (ValueError, AttributeError, TypeError) as e:
     logging.error("Failed to load environment variables: `%s`", e)
     sys.exit(1)
 
+
+# async def lifespan(application: FastAPI) -> AsyncGenerator:
+#     """
+#     Database connection pool setup and teardown.
+
+#     A connection pool is a cache of database connections maintained so that the
+#     connections can be reused when needed.
+
+#     Function creates a connection pool when the application starts and closes
+#     the pool when the application stops.
+
+#     Parameters:
+#     - application (FastAPI): The FastAPI application instance.
+
+#     Returns:
+#     - AsyncGenerator: Asynchronous generator to manage the database connection pool.
+#     """
+#     # Create the connection pool using DATABASE_URL
+#     pool = await asyncpg.create_pool(DATABASE_URL, init=register_vector)
+#     application.state.pool = pool
+#     yield  # Yield control to the application
+#     await application.state.pool.close()
+
+
+# Initialize app and router
+# app = FastAPI(lifespan=lifespan)
 app = FastAPI()
+router = APIRouter()
 
 ARCHIVE_BASE = Path("/archive")
 
@@ -168,7 +197,7 @@ def start_rabbitmq_consumer():
     logging.info("Started RabbitMQ consumer thread.")
 
 
-@app.get("/")
+@router.get("/")
 def home():
     """
     Status check endpoint.
@@ -177,7 +206,7 @@ def home():
     return {"service": "WBOR Archiver API", "status": "ok"}
 
 
-@app.get("/recordings")
+@router.get("/recordings")
 def list_recordings():
     """
     List all recordings in the archive.
@@ -188,7 +217,7 @@ def list_recordings():
     return {"count": len(recordings), "files": [str(r) for r in recordings]}
 
 
-@app.get("/download/{year}/{month}/{day}/{filename}")
+@router.get("/download/{year}/{month}/{day}/{filename}")
 def download_recording(year: str, month: str, day: str, filename: str):
     """
     Download a recording from the archive.
@@ -197,3 +226,6 @@ def download_recording(year: str, month: str, day: str, filename: str):
     if file_path.exists():
         return FileResponse(path=str(file_path), filename=filename)
     return {"error": "Recording not found"}
+
+
+app.include_router(router, prefix="/api")
