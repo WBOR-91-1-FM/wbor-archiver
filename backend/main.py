@@ -33,10 +33,14 @@ TODO:
 """
 
 import os
+import time
 import sys
+import json
+import threading
 from pathlib import Path
-import pytz
 import logging
+import pytz
+import pika
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
@@ -52,11 +56,11 @@ load_dotenv()
 
 try:
     # Ensure environment variables are stripped of leading/trailing spaces
-    ARCHIVE_DIR = os.getenv("ARCHIVE_DIR", "/archive").strip()
-    UNMATCHED_DIR = "unmatched"
+    ARCHIVE_DIR = os.getenv("ARCHIVE_DIR").strip()
+    UNMATCHED_DIR = os.getenv("UNMATCHED_DIR").strip()
 
     # Parse and validate SEGMENT_DURATION_SECONDS
-    segment_duration_str = os.getenv("SEGMENT_DURATION_SECONDS", "300").strip()
+    segment_duration_str = os.getenv("SEGMENT_DURATION_SECONDS").strip()
     if not segment_duration_str.isdigit():
         raise ValueError(
             f"SEGMENT_DURATION_SECONDS must be an integer, got '{segment_duration_str}'"
@@ -73,18 +77,95 @@ try:
 
     logging.debug(
         "Configuration loaded successfully:"
-        "ARCHIVE_DIR=%s, SEGMENT_DURATION_SECONDS=%s, UNMATCHED_DIR=%s",
+        "ARCHIVE_DIR=`%s`, SEGMENT_DURATION_SECONDS=`%s`, UNMATCHED_DIR=`%s`",
         ARCHIVE_DIR,
         SEGMENT_DURATION_SECONDS,
         UNMATCHED_DIR,
     )
 except (ValueError, AttributeError, TypeError) as e:
-    logging.error("Failed to load environment variables: %s", e)
+    logging.error("Failed to load environment variables: `%s`", e)
     sys.exit(1)
 
 app = FastAPI()
 
 ARCHIVE_BASE = Path("/archive")
+
+
+def _on_rabbitmq_message(ch, method, _properties, body):
+    logging.info("Received message from RabbitMQ: `%s`", body)
+    try:
+        payload = json.loads(body)
+        filename = payload.get("filename")
+        timestamp = payload.get("timestamp", {})
+        year = timestamp.get("year")
+        month = timestamp.get("month")
+        day = timestamp.get("day")
+        hour = timestamp.get("hour")
+        minute = timestamp.get("minute")
+        second = timestamp.get("second")
+
+        logging.debug(
+            "Message indicates new file: `%s` at `%s-%s-%s %s:%s:%s`",
+            filename,
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+        )
+        # TODO: Compute SHA-256 hash of the file, store metadata in DB, etc.
+
+    except (json.JSONDecodeError, TypeError) as e:
+        logging.error("Failed to parse message: `%s`", e)
+    finally:
+        ch.basic_ack(delivery_tag=method.delivery_tag)
+
+
+def _rabbitmq_consumer():
+    """
+    Runs in a background thread. Connects to RabbitMQ and consumes messages.
+    """
+    while True:
+        try:
+            connection = pika.BlockingConnection(
+                pika.ConnectionParameters(host=RABBITMQ_HOST, heartbeat=600)
+            )
+            channel = connection.channel()
+            channel.exchange_declare(
+                exchange=RABBITMQ_EXCHANGE, exchange_type="direct", durable=True
+            )
+            channel.queue_declare(queue=RABBITMQ_QUEUE, durable=True)
+            channel.queue_bind(exchange=RABBITMQ_EXCHANGE, queue=RABBITMQ_QUEUE)
+
+            channel.basic_qos(prefetch_count=1)
+            channel.basic_consume(
+                queue=RABBITMQ_QUEUE,
+                on_message_callback=_on_rabbitmq_message,
+                auto_ack=False,
+            )
+
+            logging.info("RabbitMQ consumer connected. Waiting for messages...")
+            channel.start_consuming()
+        except pika.exceptions.AMQPConnectionError as e:
+            logging.error(
+                "RabbitMQ connection error: `%s`. Retrying in 5 seconds...", e
+            )
+            # Sleep briefly and retry the connection.
+            time.sleep(5)
+        except KeyboardInterrupt:
+            logging.info("RabbitMQ consumer received KeyboardInterrupt; stopping.")
+            break
+
+
+@app.on_event("startup")
+def start_rabbitmq_consumer():
+    """
+    Start the RabbitMQ consumer in a background thread when the FastAPI app starts.
+    """
+    consumer_thread = threading.Thread(target=_rabbitmq_consumer, daemon=True)
+    consumer_thread.start()
+    logging.info("Started RabbitMQ consumer thread.")
 
 
 @app.get("/")

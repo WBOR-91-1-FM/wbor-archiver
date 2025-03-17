@@ -29,6 +29,7 @@ services:
       - ./archive:/archive
     environment:
       - ARCHIVE_DIR
+      - UNMATCHED_DIR
       - SEGMENT_DURATION_SECONDS
       - TZ
       - RABBITMQ_HOST=rabbitmq
@@ -71,6 +72,15 @@ services:
       - ./archive:/archive:ro  # The API only needs read-only permission
     ports:
       - "8000:8000"  # For local development
+    environment:
+      - STATION_ID
+      - ARCHIVE_DIR
+      - UNMATCHED_DIR
+      - SEGMENT_DURATION_SECONDS
+      - TZ
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_EXCHANGE=wbor-archiver-exchange
+      - RABBITMQ_QUEUE=recording-segments
     depends_on:
       rabbitmq:
         condition: service_healthy

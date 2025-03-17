@@ -26,7 +26,7 @@ try:
     RABBITMQ_EXCHANGE = os.getenv("RABBITMQ_EXCHANGE").strip()
     RABBITMQ_QUEUE = os.getenv("RABBITMQ_QUEUE").strip()
 except (ValueError, AttributeError, TypeError) as e:
-    logging.error("Failed to load environment variables: %s", e)
+    logging.error("Failed to load environment variables: `%s`", e)
     sys.exit(1)
 
 
@@ -58,7 +58,7 @@ class RabbitMQClient:
 
             logging.info("RabbitMQ connection established.")
         except pika.exceptions.AMQPConnectionError as e:
-            logging.error("Failed to connect to RabbitMQ: %s", e)
+            logging.error("Failed to connect to RabbitMQ: `%s`", e)
             self.connection = None
             self.channel = None
 
@@ -82,9 +82,9 @@ class RabbitMQClient:
                     body=message,
                     properties=pika.BasicProperties(delivery_mode=2),
                 )
-                logging.info("Sent message to RabbitMQ: %s", message)
+                logging.info("Sent message to RabbitMQ: `%s`", message)
             except pika.exceptions.AMQPError as e:
-                logging.error("Failed to send message to RabbitMQ: %s", e)
+                logging.error("Failed to send message to RabbitMQ: `%s`", e)
 
     def close(self):
         """Close the RabbitMQ connection gracefully."""

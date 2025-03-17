@@ -56,11 +56,11 @@ load_dotenv()
 
 # Environment variables
 try:
-    STATION_ID = os.getenv("STATION_ID", "wbor").strip().upper()
-    STREAM_URL = os.getenv("STREAM_URL", "https://listen.wbor.org/").strip()
-    ARCHIVE_DIR = os.getenv("ARCHIVE_DIR", "/archive").strip()
+    STATION_ID = os.getenv("STATION_ID").strip().upper()
+    STREAM_URL = os.getenv("STREAM_URL").strip()
+    ARCHIVE_DIR = os.getenv("ARCHIVE_DIR").strip()
 
-    segment_duration_str = os.getenv("SEGMENT_DURATION_SECONDS", "300").strip()
+    segment_duration_str = os.getenv("SEGMENT_DURATION_SECONDS").strip()
     if not segment_duration_str.isdigit():
         raise ValueError(
             f"SEGMENT_DURATION_SECONDS must be an integer, got '{segment_duration_str}'"
@@ -72,14 +72,14 @@ try:
 
     logging.debug(
         "Configuration loaded successfully: "
-        "STATION_ID=%s, STREAM_URL=%s, ARCHIVE_DIR=%s, SEGMENT_DURATION_SECONDS=%d",
+        "STATION_ID=`%s`, STREAM_URL=`%s`, ARCHIVE_DIR=`%s`, SEGMENT_DURATION_SECONDS=`%d`",
         STATION_ID,
         STREAM_URL,
         ARCHIVE_DIR,
         SEGMENT_DURATION_SECONDS,
     )
 except (ValueError, AttributeError, TypeError) as e:
-    logging.error("Failed to load environment variables: %s", e)
+    logging.error("Failed to load environment variables: `%s`", e)
     sys.exit(1)
 
 # ISO UTC formatting pattern (ex: `WBOR-2025-02-14T00:40:00Z.temp`)
@@ -178,7 +178,7 @@ def business_logic(log_line: str, active_segment: str):
     match_metadata = re.search(r"Metadata update for StreamTitle: (.+)", log_line)
     if match_metadata:
         stream_title = match_metadata.group(1)
-        logging.info("Stream title updated: %s", stream_title)
+        logging.info("Stream title updated: `%s`", stream_title)
 
     # Unchanged; leave the previous segment temp unchanged
     return active_segment
@@ -220,7 +220,7 @@ def assert_archive_dir_exists():
         if not os.path.exists(ARCHIVE_DIR):
             os.makedirs(ARCHIVE_DIR, exist_ok=True)
     except OSError as e:
-        logging.error("Failed to create archive directory '%s': %s", ARCHIVE_DIR, e)
+        logging.error("Failed to create archive directory '%s': `%s`", ARCHIVE_DIR, e)
         sys.exit(1)
 
     return True
@@ -245,14 +245,14 @@ def time_until_next_segment():
             boundary_time = now + timedelta(seconds=sleep_time)
 
             logging.info(
-                "Current time is %s. Sleeping until next segment boundary at %s",
+                "Current time is `%s`. Sleeping until next segment boundary at `%s`",
                 now.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 boundary_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
             )
             return sleep_time
         return 0
     except (ValueError, OverflowError) as e:
-        logging.error("Error in time calculation to next boundary: %s", e)
+        logging.error("Error in time calculation to next boundary: `%s`", e)
         sys.exit(1)
 
 

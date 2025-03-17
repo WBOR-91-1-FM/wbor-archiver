@@ -47,11 +47,11 @@ load_dotenv()
 
 try:
     # Ensure environment variables are stripped of leading/trailing spaces
-    ARCHIVE_DIR = os.getenv("ARCHIVE_DIR", "/archive").strip()
-    UNMATCHED_DIR = "unmatched"
+    ARCHIVE_DIR = os.getenv("ARCHIVE_DIR").strip()
+    UNMATCHED_DIR = os.getenv("UNMATCHED_DIR").strip()
 
     # Parse and validate SEGMENT_DURATION_SECONDS
-    segment_duration_str = os.getenv("SEGMENT_DURATION_SECONDS", "300").strip()
+    segment_duration_str = os.getenv("SEGMENT_DURATION_SECONDS").strip()
     if not segment_duration_str.isdigit():
         raise ValueError(
             f"SEGMENT_DURATION_SECONDS must be an integer, got '{segment_duration_str}'"
@@ -61,20 +61,15 @@ try:
     # Use UTC timezone for consistency
     TZ = pytz.UTC
 
-    # RabbitMQ configuration - passed in from docker-compose.yml
-    RABBITMQ_HOST = os.getenv("RABBITMQ_HOST").strip()
-    RABBITMQ_EXCHANGE = os.getenv("RABBITMQ_EXCHANGE").strip()
-    RABBITMQ_QUEUE = os.getenv("RABBITMQ_QUEUE").strip()
-
     logging.debug(
         "Configuration loaded successfully:"
-        "ARCHIVE_DIR=%s, SEGMENT_DURATION_SECONDS=%s, UNMATCHED_DIR=%s",
+        "ARCHIVE_DIR=`%s`, SEGMENT_DURATION_SECONDS=`%s`, UNMATCHED_DIR=`%s`",
         ARCHIVE_DIR,
         SEGMENT_DURATION_SECONDS,
         UNMATCHED_DIR,
     )
 except (ValueError, AttributeError, TypeError) as e:
-    logging.error("Failed to load environment variables: %s", e)
+    logging.error("Failed to load environment variables: `%s`", e)
     sys.exit(1)
 
 # Match ISO 8601 UTC timestamped filenames:
@@ -101,7 +96,7 @@ def compute_file_hash(file_path, block_size=65536):
                     break
                 hasher.update(buf)
     except (OSError, IOError) as e:
-        logging.error("Error computing hash for %s: %s", file_path, e)
+        logging.error("Error computing hash for `%s`: `%s`", file_path, e)
         return None
     return hasher.hexdigest()
 
@@ -186,7 +181,7 @@ class ArchiveHandler(FileSystemEventHandler):
         try:
             os.makedirs(target_dir, exist_ok=True)
         except OSError as e:
-            logging.error("Failed to create directory `%s`: %s", target_dir, e)
+            logging.error("Failed to create directory `%s`: `%s`", target_dir, e)
             return
 
         # Use a lock to ensure atomic conflict-checking and renaming
@@ -202,7 +197,7 @@ class ArchiveHandler(FileSystemEventHandler):
                     existing_file_hash = compute_file_hash(new_location)
                     if new_file_hash is None or existing_file_hash is None:
                         logging.error(
-                            "Could not compute file hash for comparison of `%s`.",
+                            "Could not compute file hash for comparison of `%s`",
                             filename,
                         )
                         return
@@ -229,10 +224,10 @@ class ArchiveHandler(FileSystemEventHandler):
                         )
                         counter += 1
                     new_location = temp_location
-                    logging.info("Renaming conflicting file to `%s`.", new_location)
+                    logging.info("Renaming conflicting file to `%s`", new_location)
                     # e.g.: `WBOR-2025-02-14T00:40:00Z-1.mp3`
                 except (OSError, IOError) as e:
-                    logging.error("Error comparing files for `%s`: %s", filename, e)
+                    logging.error("Error comparing files for `%s`: `%s`", filename, e)
                     return
 
             # Now that conflicts are handled, perform atomic move to subdir
@@ -257,7 +252,7 @@ class ArchiveHandler(FileSystemEventHandler):
                 # not moved. This could lead to data loss if the file is
                 # overwritten or left dangling in perpetuity.
                 logging.error(
-                    "Failed to move file `%s` to `%s`: %s",
+                    "Failed to move file `%s` to `%s`: `%s`",
                     event.dest_path,
                     new_location,
                     e,
