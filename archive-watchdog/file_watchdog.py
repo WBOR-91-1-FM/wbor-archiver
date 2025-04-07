@@ -1,16 +1,16 @@
 """
-Monitors the archive directory for `.temp` -> `.mp3` renaming, which
-indicates that a new recording segment has been completed. Then,
-dynamically move the file to the appropriate directory based on the ISO
-8601 UTC timestamp parsed from the filename. Handles file conflicts by
-appending a counter to the filename--
+Monitors the archive directory for `.temp` -> `.mp3` renaming events,
+which indicates that a new recording segment has been completed. Then,
+move the file to the appropriate directory based on the ISO 8601 UTC
+timestamp parsed from the filename. Handles file conflicts by
+appending a counter to the filename...
 
-If two conflicting file names are detected, checks equality of the
+...if two conflicting file names are detected, checks equality of the
 files. If identical (via hash comparison), deletes the newer duplicate.
 If different, appends a counter to the filename to make a unique
 filename.
 
-Not quite sure how to handle the case where the files are differen (in
+Not sure how to handle the case where the files are differen (in
 content) but have the same filename - this is a rare edge case. Perhaps
 trigger a manual review in this case? And don't serve the new file until
 the review is complete.
