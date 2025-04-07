@@ -135,10 +135,10 @@ services:
     networks:
       - wbor-network
 
-  # web:
+  # frontend:
   #   build:
-  #     context: ./web
-  #   container_name: wbor-archiver-web
+  #     context: ./frontend
+  #   container_name: wbor-archiver-frontend
   #   restart: unless-stopped
   #   ports:
   #     - "3000:80" # Direct local access for debugging
@@ -162,7 +162,7 @@ services:
       - "80:80"
     depends_on:
       - backend
-      # - web
+      # - frontend
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:80/ || exit 1"]
       interval: 30s
