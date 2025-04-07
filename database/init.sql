@@ -8,6 +8,15 @@ CREATE TABLE IF NOT EXISTS segments (
     start_ts TIMESTAMPTZ NOT NULL,       -- When this recording started
     end_ts TIMESTAMPTZ,                  -- When this recording ended (if known)
     is_published BOOLEAN NOT NULL DEFAULT TRUE,   -- Mark hidden/un-published as needed
+    sha256_hash TEXT,
+    bit_rate TEXT,
+    sample_rate TEXT,
+    icy_br TEXT,
+    icy_genre TEXT,
+    icy_name TEXT,
+    icy_url TEXT,
+    encoder TEXT,
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

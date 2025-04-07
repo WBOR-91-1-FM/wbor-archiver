@@ -1,5 +1,9 @@
-fastapi
-uvicorn
+fastapi[standard]
+uvicorn[standard]
 pytz
 python-dotenv
 pika
+sqlalchemy
+alembic
+psycopg2-binary
+colorlog

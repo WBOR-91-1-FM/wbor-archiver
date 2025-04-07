@@ -21,6 +21,8 @@ maps tokens to user IDs. An endpoint is provided to add new admin users,
 provided a super-admin token is passed in the `X-Super-Admin-Token` header
 (which is hardcoded in the service).
 
+NOTE: All routes are prefixed with `/api`.
+
 TODO:
 - Record fields from file (using ffprobe):
     - bit_rate
@@ -42,26 +44,25 @@ import logging
 import pytz
 import pika
 from dotenv import load_dotenv
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, Depends
 from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
+from models import Segment
+import sqlalchemy
+from utils.hash import hash_file
+from utils.ffprobe import probe as get_ffprobe_output
+from utils.logging import configure_logging
+from database import SessionLocal
 
-# Configure logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d in %(funcName)s()] - %(message)s",
-)
-
+logging.root.handlers = []
 logging.getLogger("pika").setLevel(logging.WARNING)
+logger = configure_logging()
 
-# Load environment variables from .env file if present
 load_dotenv()
 
 try:
-    # Ensure environment variables are stripped of leading/trailing spaces
     ARCHIVE_DIR = os.getenv("ARCHIVE_DIR").strip()
     UNMATCHED_DIR = os.getenv("UNMATCHED_DIR").strip()
-
-    # Parse and validate SEGMENT_DURATION_SECONDS
     segment_duration_str = os.getenv("SEGMENT_DURATION_SECONDS").strip()
     if not segment_duration_str.isdigit():
         raise ValueError(
@@ -69,15 +70,15 @@ try:
         )
     SEGMENT_DURATION_SECONDS = int(segment_duration_str)
 
-    # Use UTC timezone for consistency
+    # Use UTC timezone for backend consistency
     TZ = pytz.UTC
 
-    # RabbitMQ configuration - passed in from docker-compose.yml
+    # RabbitMQ configuration, note that these are passed in docker-compose.yml
     RABBITMQ_HOST = os.getenv("RABBITMQ_HOST").strip()
     RABBITMQ_EXCHANGE = os.getenv("RABBITMQ_EXCHANGE").strip()
     RABBITMQ_QUEUE = os.getenv("RABBITMQ_QUEUE").strip()
 
-    logging.debug(
+    logger.debug(
         "Configuration loaded successfully:"
         "ARCHIVE_DIR=`%s`, SEGMENT_DURATION_SECONDS=`%s`, UNMATCHED_DIR=`%s`",
         ARCHIVE_DIR,
@@ -85,43 +86,23 @@ try:
         UNMATCHED_DIR,
     )
 except (ValueError, AttributeError, TypeError) as e:
-    logging.error("Failed to load environment variables: `%s`", e)
+    logger.error("Failed to load environment variables: `%s`", e)
     sys.exit(1)
 
-
-# async def lifespan(application: FastAPI) -> AsyncGenerator:
-#     """
-#     Database connection pool setup and teardown.
-
-#     A connection pool is a cache of database connections maintained so that the
-#     connections can be reused when needed.
-
-#     Function creates a connection pool when the application starts and closes
-#     the pool when the application stops.
-
-#     Parameters:
-#     - application (FastAPI): The FastAPI application instance.
-
-#     Returns:
-#     - AsyncGenerator: Asynchronous generator to manage the database connection pool.
-#     """
-#     # Create the connection pool using DATABASE_URL
-#     pool = await asyncpg.create_pool(DATABASE_URL, init=register_vector)
-#     application.state.pool = pool
-#     yield  # Yield control to the application
-#     await application.state.pool.close()
-
-
-# Initialize app and router
-# app = FastAPI(lifespan=lifespan)
-app = FastAPI()
+ARCHIVE_BASE = Path(ARCHIVE_DIR)
 router = APIRouter()
 
-ARCHIVE_BASE = Path("/archive")
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 def _on_rabbitmq_message(ch, method, _properties, body):
-    logging.info("Received message from RabbitMQ: `%s`", body)
+    logger.debug("Received message from RabbitMQ with payload: `%s`", body)
     try:
         payload = json.loads(body)
         filename = payload.get("filename")
@@ -133,9 +114,15 @@ def _on_rabbitmq_message(ch, method, _properties, body):
         minute = timestamp.get("minute")
         second = timestamp.get("second")
 
-        logging.debug(
-            "Message indicates new file: `%s` at `%s-%s-%s %s:%s:%s`",
-            filename,
+        if filename != f"WBOR-{year}-{month}-{day}T{hour}:{minute}:{second}Z.mp3":
+            logger.error(
+                "Filename does not match expected format: `%s`",
+                filename,
+            )
+            return
+
+        logger.info(
+            "New file: `WBOR-%s-%s-%sT%s:%s:%sZ`",
             year,
             month,
             day,
@@ -143,19 +130,46 @@ def _on_rabbitmq_message(ch, method, _properties, body):
             minute,
             second,
         )
-        # TODO: Compute SHA-256 hash of the file, store metadata in DB, etc.
+        hash = hash_file(str(ARCHIVE_BASE / year / month / day / filename))
+        ffprobe = get_ffprobe_output(str(ARCHIVE_BASE / year / month / day / filename))
+
+        db = SessionLocal()
+        try:
+            new_rec = Segment(
+                filename=filename,
+                archived_path=str(ARCHIVE_BASE / year / month / day / filename),
+                start_ts=timestamp,
+                # end_ts=,
+                sha256_hash=hash,
+                bit_rate=ffprobe.get("bit_rate"),
+                sample_rate=ffprobe.get("sample_rate"),
+                icy_br=ffprobe.get("icy_br"),
+                icy_genre=ffprobe.get("icy_genre"),
+                icy_name=ffprobe.get("icy_name"),
+                icy_url=ffprobe.get("icy_url"),
+                encoder=ffprobe.get("encoder"),
+            )
+            db.add(new_rec)
+            db.commit()
+        except (sqlalchemy.exc.SQLAlchemyError, AttributeError, TypeError) as e:
+            db.rollback()
+            logger.error("Error inserting record: %s", e)
+        finally:
+            db.close()
 
     except (json.JSONDecodeError, TypeError) as e:
-        logging.error("Failed to parse message: `%s`", e)
+        logger.error("Failed to parse message: `%s`", e)
     finally:
+        # NOTE: `finally` runs even if an exception is raised
+        # Acknowledge the message, regardless of success/failure
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
 
-def _rabbitmq_consumer():
+def _rabbitmq_consumer(stop_event: threading.Event):
     """
     Runs in a background thread. Connects to RabbitMQ and consumes messages.
     """
-    while True:
+    while not stop_event.is_set():
         try:
             connection = pika.BlockingConnection(
                 pika.ConnectionParameters(host=RABBITMQ_HOST, heartbeat=600)
@@ -174,27 +188,43 @@ def _rabbitmq_consumer():
                 auto_ack=False,
             )
 
-            logging.info("RabbitMQ consumer connected. Waiting for messages...")
+            logger.info("RabbitMQ consumer connected. Waiting for messages...")
             channel.start_consuming()
         except pika.exceptions.AMQPConnectionError as e:
-            logging.error(
-                "RabbitMQ connection error: `%s`. Retrying in 5 seconds...", e
-            )
+            logger.error("RabbitMQ connection error: `%s`. Retrying in 5 seconds...", e)
             # Sleep briefly and retry the connection.
             time.sleep(5)
         except KeyboardInterrupt:
-            logging.info("RabbitMQ consumer received KeyboardInterrupt; stopping.")
+            logger.info("RabbitMQ consumer received KeyboardInterrupt; stopping.")
             break
 
 
-@app.on_event("startup")
-def start_rabbitmq_consumer():
+def lifespan(_application: FastAPI):
     """
-    Start the RabbitMQ consumer in a background thread when the FastAPI app starts.
+    Start/stop the RabbitMQ consumer thread when the FastAPI app starts/stops.
     """
-    consumer_thread = threading.Thread(target=_rabbitmq_consumer, daemon=True)
+    stop_event = threading.Event()
+
+    # Startup
+    # `daemon=False` is set so that the consumer thread isn't killed when the
+    # main thread (lifespan) exits - it is kept alive until finished.
+    consumer_thread = threading.Thread(
+        target=_rabbitmq_consumer, args=(stop_event,), daemon=False
+    )
     consumer_thread.start()
-    logging.info("Started RabbitMQ consumer thread.")
+    logger.info("Started RabbitMQ consumer thread via lifespan.")
+
+    yield
+
+    # On shutdown, send stop event to rabbitmq consumer thread and wait for it
+    # to exit cleanly (important, since it may be in the middle of processing
+    # a message).
+    stop_event.set()
+    consumer_thread.join()
+    logger.info("Consumer thread has exited cleanly.")
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 @router.get("/")
@@ -202,7 +232,6 @@ def home():
     """
     Status check endpoint.
     """
-    logging.debug("Received status check request")
     return {"service": "WBOR Archiver API", "status": "ok"}
 
 
