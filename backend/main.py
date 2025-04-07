@@ -1,25 +1,25 @@
 """
-The backend is connected to the archive file system (as read-only) and provides
-an API to list and download recordings. As needed (determined by the request),
-concatenation of multiple files into a single download is supported for gapless
-playback across a given time range.
+The backend is connected to the archive file system (as read-only) and
+provides an API to list and download recordings. As needed (determined
+by the request), concatenation of multiple files into a single download
+is supported for gapless playback across a given time range.
 
 Processing includes:
 - Computing the SHA-256 hash of the file.
 - Storing the metadata in the database.
 
-Absolute paths should not be used. Instead, use `ARCHIVE_BASE` to refer to the
-archive root directory.
+Absolute paths should not be used. Instead, use `ARCHIVE_BASE` to refer
+to the archive root directory.
 
-By default, public users are anonymous and have read-only access to the archive.
-Administrators have full access to the archive and can perform administrative
-tasks such as hiding recordings.
+By default, public users are anonymous and have read-only access to the
+archive. Administrators have full access to the archive and can perform
+administrative tasks such as hiding recordings.
 
 Admin users are identified by a secret token that is passed in the
-`X-Admin-Token` header. An admin user table is stored in the database, which
-maps tokens to user IDs. An endpoint is provided to add new admin users,
-provided a super-admin token is passed in the `X-Super-Admin-Token` header
-(which is hardcoded in the service).
+`X-Admin-Token` header. An admin user table is stored in the database,
+which maps tokens to user IDs. An endpoint is provided to add new admin
+users, provided a super-admin token is passed in the
+`X-Super-Admin-Token` header (which is hardcoded in the service).
 
 NOTE: All routes are prefixed with `/api`.
 
@@ -34,24 +34,26 @@ TODO:
     - encoder
 """
 
-import os
-import time
-import sys
 import json
-import threading
-from pathlib import Path
 import logging
-import pytz
+import os
+import sys
+import threading
+import time
+from pathlib import Path
+
 import pika
-from dotenv import load_dotenv
-from fastapi import FastAPI, APIRouter, Depends
-from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
-from models import Segment
+import pytz
 import sqlalchemy
-from utils.hash import hash_file
+from dotenv import load_dotenv
+from fastapi import APIRouter, Depends, FastAPI
+from fastapi.responses import FileResponse
+from models import Segment
+from sqlalchemy.orm import Session
 from utils.ffprobe import probe as get_ffprobe_output
+from utils.hash import hash_file
 from utils.logging import configure_logging
+
 from database import SessionLocal
 
 logging.root.handlers = []
@@ -73,7 +75,7 @@ try:
     # Use UTC timezone for backend consistency
     TZ = pytz.UTC
 
-    # RabbitMQ configuration, note that these are passed in docker-compose.yml
+    # RabbitMQ configuration (these are passed in docker-compose.yml)
     RABBITMQ_HOST = os.getenv("RABBITMQ_HOST").strip()
     RABBITMQ_EXCHANGE = os.getenv("RABBITMQ_EXCHANGE").strip()
     RABBITMQ_QUEUE = os.getenv("RABBITMQ_QUEUE").strip()
@@ -167,7 +169,8 @@ def _on_rabbitmq_message(ch, method, _properties, body):
 
 def _rabbitmq_consumer(stop_event: threading.Event):
     """
-    Runs in a background thread. Connects to RabbitMQ and consumes messages.
+    Runs in a background thread. Connects to RabbitMQ and consumes
+    messages.
     """
     while not stop_event.is_set():
         try:
@@ -201,13 +204,15 @@ def _rabbitmq_consumer(stop_event: threading.Event):
 
 def lifespan(_application: FastAPI):
     """
-    Start/stop the RabbitMQ consumer thread when the FastAPI app starts/stops.
+    Start/stop the RabbitMQ consumer thread when the FastAPI app
+    starts/stops.
     """
     stop_event = threading.Event()
 
     # Startup
-    # `daemon=False` is set so that the consumer thread isn't killed when the
-    # main thread (lifespan) exits - it is kept alive until finished.
+    # `daemon=False` is set so that the consumer thread isn't killed
+    # when the main thread (lifespan) exits - it is kept alive until
+    # finished.
     consumer_thread = threading.Thread(
         target=_rabbitmq_consumer, args=(stop_event,), daemon=False
     )
@@ -216,9 +221,9 @@ def lifespan(_application: FastAPI):
 
     yield
 
-    # On shutdown, send stop event to rabbitmq consumer thread and wait for it
-    # to exit cleanly (important, since it may be in the middle of processing
-    # a message).
+    # On shutdown, send stop event to rabbitmq consumer thread and wait
+    # for it to exit cleanly (important, since it may be in the middle
+    # of processing a message).
     stop_event.set()
     consumer_thread.join()
     logger.info("Consumer thread has exited cleanly.")
