@@ -8,7 +8,7 @@ COMPOSE_BAKE = true
 default: up logs
 
 build:
-	@echo "Building Docker images..."
+	@echo "Building images..."
 	COMPOSE_BAKE=$(COMPOSE_BAKE) $(DOCKER_TOOL) compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) build
 
 up: build
