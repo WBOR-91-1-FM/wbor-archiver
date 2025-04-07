@@ -93,8 +93,6 @@ CMD = [
     "ffmpeg",
     "-loglevel",
     "verbose",
-    "-follow_redirects",
-    "1",
     "-i",
     STREAM_URL,
     "-map",
