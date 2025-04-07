@@ -6,8 +6,9 @@ FFmpeg is unable to split the stream at *exactly* the segment boundary,
 but it will be very close (~ +/- 10s).
 
 This is brittle in that we're relying on FFmpeg's logs to determine when
-a segment is "complete" (has finished writing). NOTE: If FFmpeg changes
-its logging format, this script may break!
+a segment is "complete" (has finished writing).
+
+NOTE: If FFmpeg changes its logging format, this script may break!
 
 As the segment is being written, it will have a `.temp` extension to
 indicate that it is "in progress". Once writing has finished, the file
@@ -28,7 +29,6 @@ with a flag to indicate that they are incomplete.
 Files will be named in ISO 8601 UTC format, for example:
 - `WBOR-2025-02-14T00:35:01Z.mp3`
 - `WBOR-2025-02-14T00:40:00Z.mp3`
-- `WBOR-2025-02-14T00:44:58Z.mp3`
 """
 
 import logging
@@ -93,6 +93,8 @@ CMD = [
     "ffmpeg",
     "-loglevel",
     "verbose",
+    "-follow_redirects",
+    "1",
     "-i",
     STREAM_URL,
     "-map",
