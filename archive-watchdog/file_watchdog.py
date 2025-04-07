@@ -44,7 +44,10 @@ from watchdog.observers import Observer
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
-    format="%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d in %(funcName)s()] - %(message)s",
+    format=(
+        "%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d in %(funcName)s()]"
+        " - %(message)s"
+    ),
 )
 logging.getLogger("watchdog.observers.inotify_buffer").setLevel(logging.WARNING)
 
