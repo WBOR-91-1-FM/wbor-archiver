@@ -5,7 +5,7 @@ SERVICE_NAME = wbor-archiver
 PROJECT_NAME = wbor-archiver
 COMPOSE_BAKE = true
 
-default: up logs
+default: up
 
 build:
 	@echo "Building images..."
