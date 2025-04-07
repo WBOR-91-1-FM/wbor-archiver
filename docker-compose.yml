@@ -63,7 +63,7 @@ services:
     networks:
       - wbor-network
 
-  api:
+  backend:
     build:
       context: ./backend
     container_name: wbor-archiver-backend
@@ -81,13 +81,14 @@ services:
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_EXCHANGE=wbor-archiver-exchange
       - RABBITMQ_QUEUE=recording-segments
+      - DATABASE_URL
     depends_on:
       rabbitmq:
         condition: service_healthy
       database:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/api || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/ || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -142,7 +143,7 @@ services:
   #   ports:
   #     - "3000:80" # Direct local access for debugging
   # depends_on:
-  #   - api
+  #   - backend
   #   healthcheck:
   #     test: ["CMD-SHELL", "curl -f http://localhost:80/ || exit 1"]
   #     interval: 30s
@@ -160,7 +161,7 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - api
+      - backend
       # - web
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:80/ || exit 1"]
