@@ -56,7 +56,7 @@ class RabbitMQClient:
             self.channel.queue_declare(queue=RABBITMQ_QUEUE, durable=True)
             self.channel.queue_bind(exchange=RABBITMQ_EXCHANGE, queue=RABBITMQ_QUEUE)
 
-            logging.info("RabbitMQ connection established.")
+            logging.debug("RabbitMQ connection established.")
         except pika.exceptions.AMQPConnectionError as e:
             logging.error("Failed to connect to RabbitMQ: `%s`", e)
             self.connection = None
@@ -90,4 +90,4 @@ class RabbitMQClient:
         """Close the RabbitMQ connection gracefully."""
         if self.connection and self.connection.is_open:
             self.connection.close()
-            logging.info("RabbitMQ connection closed.")
+            logging.debug("RabbitMQ connection closed.")

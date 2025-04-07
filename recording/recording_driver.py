@@ -1,29 +1,29 @@
 """
-Capture an MP3 audio stream from a URL and segment it into multiple files for
-archiving and playback. Files are segmented with future concatenation in mind,
-so gapless playback is possible. As a result, FFmpeg is unable to split the
-stream at *exactly* the segment boundary, but it will be very close (~ +/- 10s).
+Capture an MP3 audio stream from a URL and segment it into multiple
+files for archiving and playback. Files are segmented with future
+concatenation in mind, so gapless playback is possible. As a result,
+FFmpeg is unable to split the stream at *exactly* the segment boundary,
+but it will be very close (~ +/- 10s).
 
-This is brittle in that we're relying on FFmpeg's logs to determine when a
-segment is "complete" (has finished writing). NOTE: If FFmpeg changes its
-logging format, this script may break!
+This is brittle in that we're relying on FFmpeg's logs to determine when
+a segment is "complete" (has finished writing). NOTE: If FFmpeg changes
+its logging format, this script may break!
 
-As the segment is being written, it will have a `.temp` extension to indicate
-that it is "in progress". Once writing has finished, the file will be renamed to
-`.mp3`. This is done to prevent incomplete files from misidentified as valid
-(complete) segments.
+As the segment is being written, it will have a `.temp` extension to
+indicate that it is "in progress". Once writing has finished, the file
+will be renamed to `.mp3`. This is done to prevent incomplete files from
+misidentified as valid (complete) segments.
 
-If FFmpeg is killed or crashes, this script does not handle errors gracefully.
-We rely on Docker's restart policy (`always`) to restart the container and spin
-up a new process. Consequently, if the next segment never arrives, there will be
-a final `.temp` file that will never be closed as an `.mp3`. This `.temp` file
-is actually a valid (albeit partial) MP3. Perhaps it would be worth it to keep
-these files around with a flag to indicate that they are incomplete.
-- TODO: implement a cleanup process that runs periodically to rename any `.temp`
-    files that are older than a certain threshold (e.g. 1 hour) to `.mp3` files.
-
-Designed to be run as a long-running process, and will continue to capture the
-stream until it is manually stopped.
+If FFmpeg is killed or crashes, this script does not handle errors
+gracefully. We rely on Docker's restart policy (`always`) to restart the
+container and spin up a new process. Consequently, if the next segment
+never arrives, there will be a final `.temp` file that will never be
+closed as an `.mp3`. This `.temp` file is actually a valid (albeit
+partial) MP3. Perhaps it would be worth it to keep these files around
+with a flag to indicate that they are incomplete.
+- TODO: implement a cleanup process that runs periodically to rename any
+    `.temp` files that are older than a certain threshold (e.g. 1 hour)
+    to `.mp3` files.
 
 Files will be named in ISO 8601 UTC format, for example:
 - `WBOR-2025-02-14T00:35:01Z.mp3`
@@ -31,14 +31,15 @@ Files will be named in ISO 8601 UTC format, for example:
 - `WBOR-2025-02-14T00:44:58Z.mp3`
 """
 
-import os
-import sys
-import subprocess
-import re
-import threading
 import logging
+import os
+import re
+import subprocess
+import sys
+import threading
 import time
 from datetime import datetime, timedelta
+
 import pytz
 from dotenv import load_dotenv
 
@@ -110,11 +111,12 @@ CMD = [
     "1",  # Embed segment timing metadata
     PATTERN,
 ]
-# segment_time_metadata: If set to 1, every packet will contain the lavf.concat.start_time
-# and the lavf.concat.duration packet metadata values which are the start_time and the
-# duration of the respective file segments in the concatenated output expressed in
-# microseconds. The duration metadata is only set if it is known based on the concat file.
-# The default is 0.
+# segment_time_metadata: If set to 1, every packet will contain the
+# lavf.concat.start_time and the lavf.concat.duration packet metadata
+# values which are the start_time and the duration of the respective
+# file segments in the concatenated output expressed in microseconds.
+# The duration metadata is only set if it is known based on the concat
+# file. The default is 0.
 
 
 def rename_temp_to_mp3(temp_path: str):
@@ -144,8 +146,8 @@ def business_logic(log_line: str, active_segment: str):
     """
     Check if the logs indicates a segment has ended; `.temp` -> `.mp3`.
 
-    If a new segment is detected, return the new segment path. Otherwise, return
-    the previous (current) segment path.
+    If a new segment is detected, return the new segment path.
+    Otherwise, return the previous (current) segment path.
 
     Parameters:
     - log_line: A single line of FFmpeg's stderr output.
@@ -189,7 +191,7 @@ def ffmpeg_log_handler(ffmpeg_process: subprocess.Popen, active_segment: str):
     Read and parse each line of FFmpeg's stderr.
     Apply business logic to handle segmenting and renaming of files.
 
-    (By default, FFmpeg prints most logging and progress messages to stderr)
+    (By default, FFmpeg prints logging and progress messages to stderr)
 
     Parameters:
     - ffmpeg_process: The FFmpeg process object.
@@ -214,7 +216,7 @@ def ffmpeg_log_handler(ffmpeg_process: subprocess.Popen, active_segment: str):
 
 def assert_archive_dir_exists():
     """
-    Assert that the archive directory exists, and create it if it doesn't.
+    Assert that the archive directory exists; create if it doesn't.
     """
     try:
         if not os.path.exists(ARCHIVE_DIR):
@@ -258,21 +260,22 @@ def time_until_next_segment():
 
 def main():
     """
-    Capture the STREAM_URL as multiple segments using FFmpeg's segment muxer,
-    with strftime placeholders in the filename to include the current date and
-    time.
+    Capture the STREAM_URL as multiple segments using FFmpeg's segment
+    muxer, with strftime placeholders in the filename to include the
+    current date and time.
 
-    Waits to reach the next segment boundary before starting the recording
-    process. (e.g. if it is 3:12:34 and SEGMENT_DURATION_SECONDS is 300, it will
-    wait until 3:15:00)
+    Waits to reach the next segment boundary before starting the
+    recording process. (e.g. if it is 3:12:34 and
+    SEGMENT_DURATION_SECONDS is 300, it will wait until 3:15:00)
 
-    Due to the way segmenting works, ffmpeg may not split the stream exactly at
-    the segment boundary, but it will be very close (~ +/- 10 seconds).
+    Due to the way segmenting works, ffmpeg may not split the stream
+    exactly at the segment boundary, but it will be very close (~ +/- 10
+    seconds).
 
     The segments are named with ISO 8601 UTC timestamps (e.g.
-    `WBOR-2025-02-14T00:40:00Z.mp3`). This is done to ensure that the files are
-    named in a consistent and unambiguous way, and to prevent issues with
-    timezones or file name conflicts down the road.
+    `WBOR-2025-02-14T00:40:00Z.mp3`). This is done to ensure that the
+    files are named in a consistent and unambiguous way, and to prevent
+    issues with timezones or file name conflicts down the road.
     """
     if not assert_archive_dir_exists():
         logging.critical("Failed to create archive directory. Exiting.")
@@ -291,9 +294,9 @@ def main():
     logging.info("Running FFmpeg: %s", " ".join(CMD))
     try:
         # Spawn the FFmpeg process.
-        # Setting `text=True` ensures that the output is decoded as text (UTF-8)
-        # rather than bytes, and `universal_newlines=True` ensures that newlines
-        # are handled correctly.
+        # Setting `text=True` ensures that the output is decoded as text
+        # (UTF-8) rather than bytes, and `universal_newlines=True`
+        # ensures that newlines are handled correctly.
         ffmpeg_process = subprocess.Popen(
             CMD,
             stdout=subprocess.PIPE,
@@ -303,7 +306,7 @@ def main():
             bufsize=1,  # Line buffering to read line by line
         )
 
-        # Monitor FFmpeg's output and apply business logic to handle segmenting
+        # Monitor FFmpeg's output and apply business logic to segment
         active_segment = None  # Initially none
         t = threading.Thread(
             target=ffmpeg_log_handler,

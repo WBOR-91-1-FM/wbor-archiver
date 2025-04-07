@@ -1,52 +1,58 @@
 """
-Monitors the archive directory for `.temp` -> `.mp3` renaming, which indicates
-that a new recording segment has been completed. Then, dynamically move the file
-to the appropriate directory based on the ISO 8601 UTC timestamp parsed from the
-filename. Handles file conflicts by appending a counter to the filename--
+Monitors the archive directory for `.temp` -> `.mp3` renaming, which
+indicates that a new recording segment has been completed. Then,
+dynamically move the file to the appropriate directory based on the ISO
+8601 UTC timestamp parsed from the filename. Handles file conflicts by
+appending a counter to the filename--
 
-If two conflicting file names are detected, checks equality of the files. If
-identical (via hash comparison), deletes the newer duplicate. If different,
-appends a counter to the filename to make a unique filename.
+If two conflicting file names are detected, checks equality of the
+files. If identical (via hash comparison), deletes the newer duplicate.
+If different, appends a counter to the filename to make a unique
+filename.
 
-Not quite sure how to handle the case where the files are differen (in content)
-but have the same filename - this is a rare edge case. Perhaps trigger a manual
-review in this case? And don't serve the new file until the review is complete.
+Not quite sure how to handle the case where the files are differen (in
+content) but have the same filename - this is a rare edge case. Perhaps
+trigger a manual review in this case? And don't serve the new file until
+the review is complete.
 
 The final syntax will be `{STATION_ID}-YYYY-MM-DDTHH:MM:SSZ.mp3`, or
-`{STATION_ID}-YYYY-MM-DDTHH:MM:SSZ-{counter}.mp3` (if a conflict is detected).
+`{STATION_ID}-YYYY-MM-DDTHH:MM:SSZ-{counter}.mp3` (if a conflict is
+detected).
 
-If a file is renamed to `.mp3` but does not match the expected filename format,
-it is moved to an "unmatched" directory (defined in config).
+If a file is renamed to `.mp3` but does not match the expected filename
+format, it is moved to an "unmatched" directory (defined in config).
 
-After moving the file, the watchdog script notifies the backend so that it can
-index the new segment.
+After moving the file, the watchdog script notifies the backend so that
+it can index the new segment.
 """
 
-import time
-import os
-import sys
-import re
-import logging
-import hashlib
 import fcntl
+import hashlib
+import logging
+import os
+import re
+import sys
+import time
 from contextlib import contextmanager
+
 import pytz
 from dotenv import load_dotenv
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
 from utils.mq_client import RabbitMQClient
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d in %(funcName)s()] - %(message)s",
 )
+logging.getLogger("watchdog.observers.inotify_buffer").setLevel(logging.WARNING)
 
 # Load environment variables from .env file if present
 load_dotenv()
 
 try:
-    # Ensure environment variables are stripped of leading/trailing spaces
+    # Ensure environment vars are stripped of leading/trailing spaces
     ARCHIVE_DIR = os.getenv("ARCHIVE_DIR").strip()
     UNMATCHED_DIR = os.getenv("UNMATCHED_DIR").strip()
 
@@ -121,29 +127,30 @@ class ArchiveHandler(FileSystemEventHandler):
 
     This class overrides the `on_moved` method to handle file renames.
 
-    `on_moved` is triggered when a file or directory is moved or renamed. We're
-    interested in `.temp` files -> `.mp3`.
+    `on_moved` is triggered when a file or directory is moved or
+    renamed. We're interested in `.temp` files -> `.mp3`.
 
-    If the file matches the expected format, it is moved to the appropriate
-    directory based on its timestamp under the directory structure:
+    If the file matches the expected format, it is moved to the
+    appropriate directory based on its timestamp under the directory
+    structure:
         `{ARCHIVE_DIR}/{year}/{month}/{day}` (in UTC).
 
-    If a file is renamed to `.mp3` but *does not* match the expected filename
-    format, it is moved to an "unmatched" directory (UNMATCHED_DIR).
+    If a file is renamed to `.mp3` but *does not* match the expected
+    filename format, it is moved to `UNMATCHED_DIR`.
     """
 
     def on_moved(self, event):
         """
-        Triggered when a file or directory is moved or renamed. We're interested
-        in `.temp` files -> `.mp3`.
+        Triggered when a file or directory is moved or renamed. We're
+        interested in `.temp` files -> `.mp3`.
 
         If the file matches the expected format, move to the appropriate
         directory based on its timestamp under the directory structure:
             `{ARCHIVE_DIR}/{year}/{month}/{day}` (in UTC).
 
         Parameters:
-        - event (FileSystemEvent): The event object containing details about the
-            move/rename operation.
+        - event (FileSystemEvent): The event object containing details
+            about the move/rename operation.
         """
         if event.is_directory:
             # Ignore directory moves
@@ -187,8 +194,8 @@ class ArchiveHandler(FileSystemEventHandler):
         # Use a lock to ensure atomic conflict-checking and renaming
         lock_file_path = os.path.join(target_dir, ".lock")
         with acquire_lock(lock_file_path):
-            # (After `with acquire_lock(lock_file_path)` finishes, the lock
-            # is released.)
+            # (After `with acquire_lock(lock_file_path)` finishes, the
+            # lock is released.)
             new_location = os.path.join(target_dir, filename)
             if os.path.exists(new_location):
                 # Conflict! Compute hashes for both files and compare
@@ -248,9 +255,9 @@ class ArchiveHandler(FileSystemEventHandler):
                     }
                 )
             except OSError as e:
-                # This is a critical error, as the file has been renamed but
-                # not moved. This could lead to data loss if the file is
-                # overwritten or left dangling in perpetuity.
+                # This is a critical error, as the file has been renamed
+                # but not moved. This could lead to data loss if the
+                # file is overwritten or left dangling in perpetuity.
                 logging.error(
                     "Failed to move file `%s` to `%s`: `%s`",
                     event.dest_path,
@@ -267,8 +274,8 @@ class ArchiveHandler(FileSystemEventHandler):
 
 def main():
     """
-    Entrypoint. Sets up the observer to watch for file renames in the archive
-    directory.
+    Entrypoint. Sets up the observer to watch for file renames in the
+    archive directory.
 
     Runs indefinitely until a keyboard interrupt is received.
     """
@@ -287,7 +294,7 @@ def main():
         observer.stop()
     finally:
         RABBITMQ_CLIENT.close()  # Ensure RabbitMQ connection is closed properly
-        logging.info("RabbitMQ connection closed.")
+        logging.debug("RabbitMQ connection closed.")
     observer.join()
 
 
