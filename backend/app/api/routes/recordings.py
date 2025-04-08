@@ -10,7 +10,6 @@ from app.models.segment import Segment
 from app.schemas.recording import SegmentPublic
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 router = APIRouter(tags=["Recordings"])
