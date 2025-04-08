@@ -4,8 +4,9 @@ Logging module.
 
 import logging
 from datetime import datetime, timezone
-from colorlog import ColoredFormatter
+
 import pytz
+from colorlog import ColoredFormatter
 
 
 def configure_logging(logger_name="wbor_archiver_backend"):
@@ -35,7 +36,10 @@ def configure_logging(logger_name="wbor_archiver_backend"):
 
     # Define the formatter with color and PID
     formatter = EasternTimeFormatter(
-        "%(log_color)s%(asctime)s - PID %(process)d - %(name)s - %(levelname)s - %(message)s",
+        fmt=(
+            "%(log_color)s%(asctime)s - PID %(process)d - %(name)s - Line %(lineno)d "
+            "- %(levelname)s - %(message)s"
+        ),
         log_colors={
             "DEBUG": "white",
             "INFO": "green",

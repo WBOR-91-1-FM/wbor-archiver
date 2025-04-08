@@ -105,7 +105,7 @@ def compute_file_hash(file_path, block_size=65536):
                     break
                 hasher.update(buf)
     except (OSError, IOError) as e:
-        logging.error("Error computing hash for `%s`: `%s`", file_path, e)
+        logging.error("Error computing hash for `%s`: %s", file_path, e)
         return None
     return hasher.hexdigest()
 
@@ -191,7 +191,7 @@ class ArchiveHandler(FileSystemEventHandler):
         try:
             os.makedirs(target_dir, exist_ok=True)
         except OSError as e:
-            logging.error("Failed to create directory `%s`: `%s`", target_dir, e)
+            logging.error("Failed to create directory `%s`: %s", target_dir, e)
             return
 
         # Use a lock to ensure atomic conflict-checking and renaming
@@ -237,7 +237,7 @@ class ArchiveHandler(FileSystemEventHandler):
                     logging.info("Renaming conflicting file to `%s`", new_location)
                     # e.g.: `WBOR-2025-02-14T00:40:00Z-1.mp3`
                 except (OSError, IOError) as e:
-                    logging.error("Error comparing files for `%s`: `%s`", filename, e)
+                    logging.error("Error comparing files for `%s`: %s", filename, e)
                     return
 
             # Now that conflicts are handled, perform atomic move to subdir
@@ -262,7 +262,7 @@ class ArchiveHandler(FileSystemEventHandler):
                 # but not moved. This could lead to data loss if the
                 # file is overwritten or left dangling in perpetuity.
                 logging.error(
-                    "Failed to move file `%s` to `%s`: `%s`",
+                    "Failed to move file `%s` to `%s`: %s",
                     event.dest_path,
                     new_location,
                     e,

@@ -15,7 +15,7 @@ logger = configure_logging(__name__)
 
 
 def _on_message(ch, method, _properties, body, archive_base):
-    logger.debug("Received message: %s", body)
+    logger.debug("Received message: `%s`", body)
     try:
         payload = json.loads(body)
         filename = payload.get("filename")
@@ -61,7 +61,7 @@ def _rabbitmq_consumer(stop_event: threading.Event, archive_base):
             logger.info("RabbitMQ consumer connected. Waiting for messages...")
             channel.start_consuming()
         except Exception as e:  # pylint: disable=broad-except
-            logger.error("Connection error: %s. Retrying in 5 seconds...", e)
+            logger.error("Connection error: `%s`. Retrying in 5 seconds...", e)
             time.sleep(5)
         finally:
             try:

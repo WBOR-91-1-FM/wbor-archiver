@@ -138,7 +138,7 @@ def rename_temp_to_mp3(temp_path: str):
         logging.debug("Renamed `%s` -> `%s`", temp_path, final_path)
         return final_path
     except (OSError, subprocess.SubprocessError) as e:
-        logging.error("Failed to rename `%s` -> `%s`: `%s`", temp_path, final_path, e)
+        logging.error("Failed to rename `%s` -> `%s`: %s", temp_path, final_path, e)
         return None
 
 
@@ -222,7 +222,7 @@ def assert_archive_dir_exists():
         if not os.path.exists(ARCHIVE_DIR):
             os.makedirs(ARCHIVE_DIR, exist_ok=True)
     except OSError as e:
-        logging.error("Failed to create archive directory '%s': `%s`", ARCHIVE_DIR, e)
+        logging.error("Failed to create archive directory '%s': %s", ARCHIVE_DIR, e)
         sys.exit(1)
 
     return True
@@ -286,12 +286,12 @@ def main():
         SEGMENT_DURATION_SECONDS,
         SEGMENT_DURATION_SECONDS / 60,
     )
-    logging.debug("Writing segments according to pattern: %s", PATTERN)
+    logging.debug("Writing segments according to pattern: `%s`", PATTERN)
 
     # Calculate how many seconds to sleep until the next segment boundary
     time.sleep(time_until_next_segment())
     logging.info("Segment boundary reached. Starting recording...")
-    logging.info("Running FFmpeg: %s", " ".join(CMD))
+    logging.info("Running FFmpeg: `%s`", " ".join(CMD))
     try:
         # Spawn the FFmpeg process.
         # Setting `text=True` ensures that the output is decoded as text

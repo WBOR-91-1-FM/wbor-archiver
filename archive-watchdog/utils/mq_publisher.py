@@ -63,7 +63,7 @@ class RabbitMQClient:
 
             logging.debug("RabbitMQ connection established.")
         except AMQPConnectionError as e:
-            logging.error("Failed to connect to RabbitMQ: `%s`", e)
+            logging.error("Failed to connect to RabbitMQ: %s", e)
             self.connection = None
             self.channel = None
 

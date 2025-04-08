@@ -6,10 +6,10 @@ from app.config import settings
 from fastapi import APIRouter
 from fastapi.responses import FileResponse
 
-router = APIRouter()
+router = APIRouter(tags=["Recordings"])
 
 
-@router.get("/recordings")
+@router.get("/recordings", tags=["List"])
 def list_recordings():
     """
     List all recordings in the archive.
@@ -19,7 +19,7 @@ def list_recordings():
     return {"count": len(recordings), "files": [str(r) for r in recordings]}
 
 
-@router.get("/download/{year}/{month}/{day}/{filename}")
+@router.get("/download/{year}/{month}/{day}/{filename}", tags=["Download"])
 def download_recording(year: str, month: str, day: str, filename: str):
     """
     Download a recording from the archive.
