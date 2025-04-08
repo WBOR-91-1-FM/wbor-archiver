@@ -58,10 +58,10 @@ jobs:
           # Configure git user
           git config --global user.name 'GitHub Action'
           git config --global user.email 'action@github.com'
-          
+
           # Stage all PNG files (new and modified)
           git add diagrams/png/*.png
-          
+
           # Check if there are any staged changes
           if git diff --cached --exit-code; then
             echo "No changes in diagrams. Skipping commit."

@@ -22,9 +22,6 @@ never arrives, there will be a final `.temp` file that will never be
 closed as an `.mp3`. This `.temp` file is actually a valid (albeit
 partial) MP3. Perhaps it would be worth it to keep these files around
 with a flag to indicate that they are incomplete.
-- TODO: implement a cleanup process that runs periodically to rename any
-    `.temp` files that are older than a certain threshold (e.g. 1 hour)
-    to `.mp3` files.
 
 Files will be named in ISO 8601 UTC format, for example:
 - `WBOR-2025-02-14T00:35:01Z.mp3`
