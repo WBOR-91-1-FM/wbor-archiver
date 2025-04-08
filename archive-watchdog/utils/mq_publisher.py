@@ -3,16 +3,21 @@ Client for sending messages to RabbitMQ over a persistent connection.
 """
 
 import json
+import logging
 import os
 import sys
-import logging
+
 import pika
 from dotenv import load_dotenv
+from pika.exceptions import AMQPConnectionError
 
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
-    format="%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d in %(funcName)s()] - %(message)s",
+    format=(
+        "%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d in %(funcName)s()]"
+        " - %(message)s"
+    ),
 )
 
 logging.getLogger("pika").setLevel(logging.WARNING)
@@ -57,7 +62,7 @@ class RabbitMQClient:
             self.channel.queue_bind(exchange=RABBITMQ_EXCHANGE, queue=RABBITMQ_QUEUE)
 
             logging.debug("RabbitMQ connection established.")
-        except pika.exceptions.AMQPConnectionError as e:
+        except AMQPConnectionError as e:
             logging.error("Failed to connect to RabbitMQ: `%s`", e)
             self.connection = None
             self.channel = None
@@ -82,8 +87,8 @@ class RabbitMQClient:
                     body=message,
                     properties=pika.BasicProperties(delivery_mode=2),
                 )
-                logging.info("Sent message to RabbitMQ: `%s`", message)
-            except pika.exceptions.AMQPError as e:
+                logging.info("Sent to RabbitMQ: `%s`", message)
+            except AMQPConnectionError as e:
                 logging.error("Failed to send message to RabbitMQ: `%s`", e)
 
     def close(self):

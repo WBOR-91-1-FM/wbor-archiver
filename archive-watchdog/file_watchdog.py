@@ -37,7 +37,7 @@ from contextlib import contextmanager
 
 import pytz
 from dotenv import load_dotenv
-from utils.mq_client import RabbitMQClient
+from utils.mq_publisher import RabbitMQClient
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
