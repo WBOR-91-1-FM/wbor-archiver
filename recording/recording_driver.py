@@ -31,6 +31,7 @@ Files will be named in ISO 8601 UTC format, for example:
 import logging
 import os
 import re
+import signal
 import subprocess
 import sys
 import threading
@@ -52,12 +53,10 @@ logging.basicConfig(
 
 load_dotenv()
 
-# Environment variables
 try:
     STATION_ID = os.getenv("STATION_ID").strip().upper()
     STREAM_URL = os.getenv("STREAM_URL").strip()
     ARCHIVE_DIR = os.getenv("ARCHIVE_DIR").strip()
-
     segment_duration_str = os.getenv("SEGMENT_DURATION_SECONDS").strip()
     if not segment_duration_str.isdigit():
         raise ValueError(
@@ -108,12 +107,6 @@ CMD = [
     "1",  # Embed segment timing metadata
     PATTERN,
 ]
-# segment_time_metadata: If set to 1, every packet will contain the
-# lavf.concat.start_time and the lavf.concat.duration packet metadata
-# values which are the start_time and the duration of the respective
-# file segments in the concatenated output expressed in microseconds.
-# The duration metadata is only set if it is known based on the concat
-# file. The default is 0.
 
 
 def rename_temp_to_mp3(temp_path: str):
@@ -151,21 +144,23 @@ def business_logic(log_line: str, active_segment: str):
     - active_segment: The current segment file that is being written to.
     """
     # Detect that a segment has ended and rename the file.
-    # Example: `segment:'/archive/WBOR-2025-02-17T13:30:00Z.temp' count:0 ended`
+    # Example:
+    # `segment:'/archive/WBOR-2025-02-17T13:30:00Z.temp' count:0 ended`
     match_ended = re.search(r"segment:'([^']+\.temp)' count:(\d+) ended", log_line)
     if match_ended:
         ended_segment_path = match_ended.group(1)
         segment_count = int(match_ended.group(2))
         closed_path = rename_temp_to_mp3(ended_segment_path)
         logging.info(
-            "Segment #%d ended: `%s`. Renamed to: `%s",
+            "Segment #%d ended: `%s`. Renamed to: `%s`",
             segment_count,
             ended_segment_path,
             closed_path,
         )
 
     # Detect when FFmpeg opens a new segment for writing.
-    # Example: `Opening '/archive/WBOR-2025-02-17T13:35:00Z.temp' for writing`
+    # Example:
+    # `Opening '/archive/WBOR-2025-02-17T13:35:00Z.temp' for writing`
     match_opening = re.search(r"Opening '([^']+\.temp)' for writing", log_line)
     if match_opening:
         new_segment_temp = match_opening.group(1)
@@ -183,154 +178,183 @@ def business_logic(log_line: str, active_segment: str):
     return active_segment
 
 
-def ffmpeg_log_handler(ffmpeg_process: subprocess.Popen, active_segment: str):
+class Recorder:
     """
-    Read and parse each line of FFmpeg's stderr.
-    Apply business logic to handle segmenting and renaming of files.
-
-    (By default, FFmpeg prints logging and progress messages to stderr)
-
-    Parameters:
-    - ffmpeg_process: The FFmpeg process object.
-    - active_segment: The current segment file that is being written to.
+    Instantiate the Recorder class to start capturing the stream.
+    The class handles the FFmpeg process, signal handling, and
+    segmenting logic.
     """
-    try:
-        while ffmpeg_process.poll() is None:  # Ensure process is still running
-            line = ffmpeg_process.stderr.readline()
-            if not line:
-                break  # Stop reading if there's no more output
-            logging.debug("%s", line.strip())  # Log the raw FFmpeg output
 
-            # As FFmpeg logs are read, apply business logic to handle segmenting
-            # `active_segment` is updated with the current segment file that is
-            # being written to.
-            # If it is determined that a segment has ended, the file is renamed
-            # and the `active_segment` is updated to the new segment file.
-            active_segment = business_logic(line.strip(), active_segment)
-    except ValueError:
-        logging.warning("FFmpeg log handler tried to read from a closed stderr stream.")
+    def __init__(self):
+        self.ffmpeg_process = None
+        self.active_segment = None
 
+    def handle_signal(self, signum, _frame):
+        """
+        Signal handler that attempts graceful shutdown.
+        """
+        logging.info("Received signal `%d` - initiating graceful shutdown", signum)
+        if self.ffmpeg_process and self.ffmpeg_process.poll() is None:
+            logging.info("Sending SIGTERM to FFmpeg process")
+            self.ffmpeg_process.terminate()
+            try:
+                self.ffmpeg_process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                logging.warning("FFmpeg did not exit after SIGTERM - sending SIGKILL")
+                self.ffmpeg_process.kill()
+        sys.exit(0)
 
-def assert_archive_dir_exists():
-    """
-    Assert that the archive directory exists; create if it doesn't.
-    """
-    try:
-        if not os.path.exists(ARCHIVE_DIR):
-            os.makedirs(ARCHIVE_DIR, exist_ok=True)
-    except OSError as e:
-        logging.error("Failed to create archive directory '%s': %s", ARCHIVE_DIR, e)
-        sys.exit(1)
+    def ffmpeg_log_handler(self):
+        """
+        Reads FFmpeg's stderr line by line, applying business logic to
+        update the current segment.
 
-    return True
+        (By default, FFmpeg prints logging and progress messages to
+        stderr)
+        """
+        try:
+            # Ensure process is still running
+            while self.ffmpeg_process.poll() is None:
+                line = self.ffmpeg_process.stderr.readline()
+                if not line:
+                    break  # Stop reading if no more lines are available
+                logging.debug("%s", line.strip())  # Raw log line
 
+                # As FFmpeg logs are read, apply business logic to
+                # handle segmenting
+                # `active_segment` is updated with the current segment
+                # file that is being written to.
+                # If it is determined that a segment has ended, the file
+                # is renamed and the `active_segment` is updated to the
+                # new segment file.
 
-def time_until_next_segment():
-    """
-    Calculate the time until the next segment boundary.
-    """
-    try:
-        now = datetime.now(TZ)
-        seconds_since_midnight = now.hour * 3600 + now.minute * 60 + now.second
-        remainder = seconds_since_midnight % SEGMENT_DURATION_SECONDS
-
-        if remainder or now.second != 0:
-            # Calculate sleep time to reach the next segment
-            sleep_time = (
-                SEGMENT_DURATION_SECONDS - remainder
-                if remainder
-                else SEGMENT_DURATION_SECONDS
+                self.active_segment = business_logic(line.strip(), self.active_segment)
+        except ValueError:
+            logging.warning(
+                "FFmpeg log handler tried to read from a closed stderr stream."
             )
-            boundary_time = now + timedelta(seconds=sleep_time)
 
-            logging.info(
-                "Current time is `%s`. Sleeping until next segment boundary at `%s`",
-                now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                boundary_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            )
-            return sleep_time
-        return 0
-    except (ValueError, OverflowError) as e:
-        logging.error("Error in time calculation to next boundary: `%s`", e)
-        sys.exit(1)
-
-
-def main():
-    """
-    Capture the STREAM_URL as multiple segments using FFmpeg's segment
-    muxer, with strftime placeholders in the filename to include the
-    current date and time.
-
-    Waits to reach the next segment boundary before starting the
-    recording process. (e.g. if it is 3:12:34 and
-    SEGMENT_DURATION_SECONDS is 300, it will wait until 3:15:00)
-
-    Due to the way segmenting works, ffmpeg may not split the stream
-    exactly at the segment boundary, but it will be very close (~ +/- 10
-    seconds).
-
-    The segments are named with ISO 8601 UTC timestamps (e.g.
-    `WBOR-2025-02-14T00:40:00Z.mp3`). This is done to ensure that the
-    files are named in a consistent and unambiguous way, and to prevent
-    issues with timezones or file name conflicts down the road.
-    """
-    if not assert_archive_dir_exists():
-        logging.critical("Failed to create archive directory. Exiting.")
-        sys.exit(1)
-
-    logging.debug(
-        "Segment duration set to: %d seconds (%.2f minutes)",
-        SEGMENT_DURATION_SECONDS,
-        SEGMENT_DURATION_SECONDS / 60,
-    )
-    logging.debug("Writing segments according to pattern: `%s`", PATTERN)
-
-    # Calculate how many seconds to sleep until the next segment boundary
-    time.sleep(time_until_next_segment())
-    logging.info("Segment boundary reached. Starting recording...")
-    logging.info("Running FFmpeg: `%s`", " ".join(CMD))
-    try:
-        # Spawn the FFmpeg process.
-        # Setting `text=True` ensures that the output is decoded as text
-        # (UTF-8) rather than bytes, and `universal_newlines=True`
-        # ensures that newlines are handled correctly.
-        ffmpeg_process = subprocess.Popen(
-            CMD,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            universal_newlines=True,
-            bufsize=1,  # Line buffering to read line by line
-        )
-
-        # Monitor FFmpeg's output and apply business logic to segment
-        active_segment = None  # Initially none
-        t = threading.Thread(
-            target=ffmpeg_log_handler,
-            args=(ffmpeg_process, active_segment),
-            daemon=True,  # Exit when main thread exits
-        )
-        t.start()
-
-        # Wait for FFmpeg to exit
-        ffmpeg_returncode = ffmpeg_process.wait()
-        if ffmpeg_returncode != 0:
-            logging.error("FFmpeg exited unexpectedly. Terminating log handler thread.")
+    def assert_archive_dir_exists(self):
+        """
+        Check that the archive directory exists; create it if necessary.
+        """
+        try:
+            if not os.path.exists(ARCHIVE_DIR):
+                os.makedirs(ARCHIVE_DIR, exist_ok=True)
+        except OSError as e:
+            logging.error("Failed to create archive directory `%s`: %s", ARCHIVE_DIR, e)
             sys.exit(1)
-        logging.info("FFmpeg process exited with code: %d", ffmpeg_returncode)
-    except FileNotFoundError:
-        logging.error(
-            "FFmpeg not found. Make sure it's installed and in the system PATH."
+        return True
+
+    def time_until_next_segment(self):
+        """
+        Compute time (in seconds) until the next segment boundary.
+        """
+        try:
+            now = datetime.now(TZ)
+            seconds_since_midnight = now.hour * 3600 + now.minute * 60 + now.second
+            remainder = seconds_since_midnight % SEGMENT_DURATION_SECONDS
+
+            if remainder or now.second != 0:
+                # Calculate sleep time to reach the next segment
+                sleep_time = (
+                    SEGMENT_DURATION_SECONDS - remainder
+                    if remainder
+                    else SEGMENT_DURATION_SECONDS
+                )
+                boundary_time = now + timedelta(seconds=sleep_time)
+                logging.info(
+                    "Current time is `%s`. Sleeping until next segment boundary at `%s`",
+                    now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    boundary_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                )
+                return sleep_time
+            return 0
+        except (ValueError, OverflowError) as e:
+            logging.error("Error calculating time until next segment: `%s`", e)
+            sys.exit(1)
+
+    def run(self):
+        """
+        Capture the STREAM_URL as multiple segments using FFmpeg's
+        segment muxer, with strftime placeholders in the filename to
+        include the current date and time.
+
+        Waits to reach the next segment boundary before starting the
+        recording process. (e.g. if it is 3:12:34 and
+        SEGMENT_DURATION_SECONDS is 300, it will wait until 3:15:00)
+
+        Due to the way segmenting works, ffmpeg may not split the stream
+        exactly at the segment boundary, but it will be very close (~
+        +/- 10 seconds).
+
+        The segments are named with ISO 8601 UTC timestamps (e.g.
+        `WBOR-2025-02-14T00:40:00Z.mp3`). This is done to ensure that
+        the files are named in a consistent and unambiguous way, and to
+        prevent issues with timezones or file name conflicts down the
+        road.
+        """
+        if not self.assert_archive_dir_exists():
+            logging.critical("Failed to create archive directory. Exiting.")
+            sys.exit(1)
+
+        logging.debug(
+            "Segment duration set to: `%d` seconds (%.2f minutes)",
+            SEGMENT_DURATION_SECONDS,
+            SEGMENT_DURATION_SECONDS / 60,
         )
-        sys.exit(1)
-    except (subprocess.SubprocessError, OSError) as e:
-        logging.error("Unexpected error: %s", e)
-        sys.exit(1)
+        logging.debug("Writing segments according to pattern: `%s`", PATTERN)
+
+        time.sleep(self.time_until_next_segment())
+        logging.info("Segment boundary reached. Starting recording...")
+        logging.info("Running FFmpeg: `%s`", " ".join(CMD))
+
+        try:
+            self.ffmpeg_process = subprocess.Popen(
+                CMD,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                universal_newlines=True,
+                bufsize=1,  # Line buffering for realtime log processing
+            )
+
+            # Daemon true so it will exit when the main thread exits
+            t = threading.Thread(target=self.ffmpeg_log_handler, daemon=True)
+            t.start()
+
+            # Wait for the FFmpeg process to exit
+            ffmpeg_returncode = self.ffmpeg_process.wait()
+            if ffmpeg_returncode != 0:
+                logging.error(
+                    "FFmpeg exited unexpectedly. Terminating log handler thread."
+                )
+                sys.exit(1)
+            logging.info("FFmpeg process exited with code: `%d`", ffmpeg_returncode)
+        except FileNotFoundError:
+            logging.error(
+                "FFmpeg not found. Make sure it's installed and in the system PATH."
+            )
+            sys.exit(1)
+        except (subprocess.SubprocessError, OSError) as e:
+            logging.error("Unexpected error: `%s`", e)
+            sys.exit(1)
 
 
 if __name__ == "__main__":
     try:
-        main()
+        recorder = Recorder()
+
+        def signal_handler(signum, frame):
+            """
+            Handle signals for graceful shutdown.
+            """
+            recorder.handle_signal(signum, frame)
+
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+
+        recorder.run()
     except KeyboardInterrupt:
         logging.info("Process interrupted by user. Exiting gracefully.")
     except (OSError, subprocess.SubprocessError) as e:
