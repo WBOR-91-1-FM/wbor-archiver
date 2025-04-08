@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import sys
+import time
 
 import pika
 from dotenv import load_dotenv
@@ -45,27 +46,39 @@ class RabbitMQClient:
 
     def connect(self):
         """Establish a persistent connection to RabbitMQ."""
-        try:
-            self.connection = pika.BlockingConnection(
-                pika.ConnectionParameters(
-                    host=RABBITMQ_HOST,
-                    heartbeat=600,
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                self.connection = pika.BlockingConnection(
+                    pika.ConnectionParameters(
+                        host=RABBITMQ_HOST,
+                        heartbeat=600,
+                    )
                 )
-            )
-            self.channel = self.connection.channel()
+                self.channel = self.connection.channel()
 
-            # Ensure the exchange and queue are declared
-            self.channel.exchange_declare(
-                exchange=RABBITMQ_EXCHANGE, exchange_type="direct", durable=True
-            )
-            self.channel.queue_declare(queue=RABBITMQ_QUEUE, durable=True)
-            self.channel.queue_bind(exchange=RABBITMQ_EXCHANGE, queue=RABBITMQ_QUEUE)
+                # Ensure the exchange and queue are declared
+                self.channel.exchange_declare(
+                    exchange=RABBITMQ_EXCHANGE, exchange_type="direct", durable=True
+                )
+                self.channel.queue_declare(queue=RABBITMQ_QUEUE, durable=True)
+                self.channel.queue_bind(
+                    exchange=RABBITMQ_EXCHANGE, queue=RABBITMQ_QUEUE
+                )
 
-            logging.debug("RabbitMQ connection established.")
-        except AMQPConnectionError as e:
-            logging.error("Failed to connect to RabbitMQ: %s", e)
-            self.connection = None
-            self.channel = None
+                logging.debug("RabbitMQ connection established.")
+            except AMQPConnectionError as e:
+                logging.error(
+                    "Failed to connect to RabbitMQ on attempt %d: %s", attempt + 1, e
+                )
+                if attempt == max_retries - 1:
+                    logging.error(
+                        "Exceeded maximum number of retries to connect to RabbitMQ."
+                    )
+                    raise
+                time.sleep(2)
+                self.connection = None
+                self.channel = None
 
     def send_message(self, payload):
         """
