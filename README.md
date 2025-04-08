@@ -61,17 +61,16 @@ pre-commit run --all-files
   * [ ] Admin-only endpoints to "delete" (hide) specific recordings
 * [ ] Cleanup process that runs periodically to rename any `.temp` files that are older than a certain threshold (e.g. 1 hour) to `.mp3` files.
 * [ ] Logging for download statistics and API activity
-* [ ] Secure admin API endpoints (simple key-based auth or IP whitelisting)
-* [ ] Initialize React project optimized for mobile
+* [x] Secure admin API endpoints
 * [ ] Build basic navigation UI:
   * [ ] Date-based filtering (calendar picker)
-* [ ] Integrate with FastAPI for dynamic content
 * [ ] Add admin panel to manage recordings (delete/hide feature)
 * [ ] Test for mobile responsiveness
 
 ### Deployment
 
-* [ ] Configure reverse proxy (NGINX or Caddy) for `https://archive.wbor.org`.
+* [x] Configure proxy for `https://archive.wbor.bowdoin.edu`.
+* [ ] Deploy
 
 ### Monitoring & Alarms
 
