@@ -44,8 +44,7 @@ services:
     volumes:
       - ./archive:/archive
     environment:
-      <<: *common-env
-      <<: *rabbitmq-env
+      <<: [ *common-env, *rabbitmq-env ]
     logging:
       driver: "json-file"
       options:
@@ -65,8 +64,8 @@ services:
     ports:
       - "15672:15672" # Management UI
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER?Variable not set}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD?Variable not set}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER?Variable not set}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS?Variable not set}
     healthcheck:
       test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
       interval: 30s
@@ -85,9 +84,7 @@ services:
     ports:
       - "8000:8000" # For local development
     environment:
-      <<: *common-env
-      <<: *rabbitmq-env
-      <<: *db-env
+      <<: [ *common-env, *rabbitmq-env, *db-env ]
     depends_on:
       rabbitmq:
         condition: service_healthy
