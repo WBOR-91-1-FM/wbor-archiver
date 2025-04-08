@@ -96,6 +96,9 @@ router = APIRouter()
 
 
 def get_db():
+    """
+    Dependency to get a database session.
+    """
     db = SessionLocal()
     try:
         yield db
@@ -104,6 +107,9 @@ def get_db():
 
 
 def _on_rabbitmq_message(ch, method, _properties, body):
+    """
+    Callback function to handle messages from RabbitMQ.
+    """
     logger.debug("Received message from RabbitMQ with payload: `%s`", body)
     try:
         payload = json.loads(body)
