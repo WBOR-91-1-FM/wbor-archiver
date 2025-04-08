@@ -1,6 +1,6 @@
 """
 Segment model for the archive.
-This model represents a recording segment (file) in the archive.
+This model represents a recording Segment (file) in the archive.
 """
 
 from app.core.database import Base
@@ -11,7 +11,7 @@ from sqlalchemy.orm import relationship
 
 class Segment(Base):  # pylint: disable=too-few-public-methods
     """
-    Represents a recording segment (file) in the archive.
+    Represents a recording Segment (file) in the archive.
     """
 
     __tablename__ = "segments"
@@ -24,7 +24,10 @@ class Segment(Base):  # pylint: disable=too-few-public-methods
         Text, nullable=False
     )  # Full path to where the file is stored
     start_ts = Column(DateTime(timezone=True), nullable=False)  # When recording started
-    end_ts = Column(DateTime(timezone=True))  # When recording ended (if known)
+
+    # When recording ended, which should always be known, since the msg doesn't arrive unless the
+    # recording is done
+    end_ts = Column(DateTime(timezone=True))
     is_published = Column(Boolean, nullable=False, default=True)
     created_at = Column(
         DateTime(timezone=True), server_default=text("NOW()"), nullable=False

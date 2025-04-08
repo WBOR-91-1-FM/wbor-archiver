@@ -1,6 +1,6 @@
 """
 Download model for the archive.
-This model represents a download log entry for a recording segment.
+This model represents a download log entry for a recording Segment.
 """
 
 from app.core.database import Base
@@ -11,7 +11,7 @@ from sqlalchemy.orm import relationship
 class DownloadLog(Base):  # pylint: disable=too-few-public-methods
     """
     Mirrors the 'download_logs' table from init.sql.
-    Tracks whenever a segment is downloaded / played back.
+    Tracks whenever a Segment is downloaded / played back.
     """
 
     __tablename__ = "download_logs"

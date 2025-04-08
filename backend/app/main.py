@@ -1,7 +1,7 @@
 """
 The backend is connected to the archive file system (read-only) and
 provides an endpoints to list and download recordings. For downloads
-containing multiple segments, we concatenate them together into a single
+containing multiple Segments, we concatenate them together into a single
 gapless recording.
 
 Absolute paths should not be used. Instead, use `ARCHIVE_BASE` to refer
