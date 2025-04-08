@@ -7,9 +7,9 @@ x-common-env: &common-env
   SEGMENT_DURATION_SECONDS: ${SEGMENT_DURATION_SECONDS?Variable not set}
 
 x-rabbitmq-env: &rabbitmq-env
-  RABBITMQ_HOST: ${RABBITMQ_HOST?Variable not set}}
-  RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE?Variable not set}}
-  RABBITMQ_QUEUE: ${RABBITMQ_QUEUE?Variable not set}}
+  RABBITMQ_HOST: ${RABBITMQ_HOST?Variable not set}
+  RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE?Variable not set}
+  RABBITMQ_QUEUE: ${RABBITMQ_QUEUE?Variable not set}
 
 x-db-env: &db-env
   POSTGRES_HOST: ${POSTGRES_HOST?Variable not set}
@@ -81,10 +81,10 @@ services:
     restart: unless-stopped
     volumes:
       - ./archive:/archive:ro # The API only needs read-only permission
-    ports:
-      - "8000:8000" # For local development
+      - ./backend:/app
     environment:
       <<: [ *common-env, *rabbitmq-env, *db-env ]
+      BACKEND_APP_PASS: ${BACKEND_APP_PASS?Variable not set}
     depends_on:
       rabbitmq:
         condition: service_healthy
