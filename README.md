@@ -36,6 +36,21 @@ make
 
 **Note:** by default, the archive directory is `./archive`. As of now, to change this, edit the `docker-compose.yml` file (under the `volumes` section for `recording` and `archive-watchdog`).
 
+## Developing
+
+Install the pre-commit hooks to ensure that code is formatted correctly before committing. This will help maintain a clean codebase.
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+You can run the pre-commit hooks manually to check for any issues:
+
+```bash
+pre-commit run --all-files
+```
+
 ## TO-DO
 
 ### Development Tasks
@@ -44,6 +59,7 @@ make
   * [ ] Listing recordings with metadata
   * [ ] Downloading recordings
   * [ ] Admin-only endpoints to "delete" (hide) specific recordings
+* [ ] Cleanup process that runs periodically to rename any `.temp` files that are older than a certain threshold (e.g. 1 hour) to `.mp3` files.
 * [ ] Logging for download statistics and API activity
 * [ ] Secure admin API endpoints (simple key-based auth or IP whitelisting)
 * [ ] Initialize React project optimized for mobile
