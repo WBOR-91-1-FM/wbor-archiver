@@ -5,36 +5,19 @@ Alembic migration environment script.
 
 This file sets up configurations for offline/online migrations.
 """
-import os
-import sys
 from logging.config import fileConfig
 
 from alembic import context
+from app.config import settings
 from app.core.database import Base
-from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
-
-load_dotenv()
-try:
-    POSTGRES_HOST = os.getenv("POSTGRES_HOST").strip()
-    POSTGRES_PORT = os.getenv("POSTGRES_PORT").strip()
-    POSTGRES_DB = os.getenv("POSTGRES_DB").strip()
-    POSTGRES_USER = os.getenv("POSTGRES_USER").strip()
-    POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD").strip()
-
-    DATABASE_URL = (
-        f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}"
-        f"@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
-    )
-except (ValueError, AttributeError, TypeError) as e:
-    sys.exit(1)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
 
-if DATABASE_URL:
-    config.set_main_option("sqlalchemy.url", DATABASE_URL)
+if settings.DATABASE_URL:
+    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

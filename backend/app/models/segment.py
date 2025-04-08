@@ -4,6 +4,7 @@ This model represents a recording segment (file) in the archive.
 """
 
 from app.core.database import Base
+from app.models.download import DownloadLog
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, text
 from sqlalchemy.orm import relationship
 
