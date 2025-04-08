@@ -30,3 +30,7 @@ watch:
 	while inotifywait -r -e modify,create,delete ./; do \
 		$(MAKE) restart; \
 	done
+
+clean:
+	@echo "Cleaning up containers, networks, volumes, and images..."
+	$(DOCKER_TOOL) compose -p $(PROJECT_NAME) -f $(COMPOSE_FILE) down -v --rmi all
