@@ -22,8 +22,8 @@ detected).
 If a file is renamed to `.mp3` but does not match the expected filename
 format, it is moved to an "unmatched" directory (defined in config).
 
-After moving the file, the watchdog script notifies the backend so that
-it can index the new segment.
+After moving the file, the watchdog script notifies the backend via
+RabbitMQ so that it can kick off its business logic.
 """
 
 import fcntl
