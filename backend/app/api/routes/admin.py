@@ -1,8 +1,5 @@
 """
 Admin protected routes.
-
-TODO: endpoints for:
-- block/unblock recordings
 """
 
 from app.config import settings

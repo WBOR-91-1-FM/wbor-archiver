@@ -4,16 +4,6 @@ Module to handle the processing of new recordings.
 Processing includes:
 - Computing the SHA-256 hash of the file.
 - Storing the metadata in the database.
-
-TODO:
-- Record fields from file (using ffprobe):
-    - bit_rate
-    - sample_rate
-    - icy-br
-    - icy-genre
-    - icy-name
-    - icy-url
-    - encoder
 """
 
 from datetime import datetime, timedelta

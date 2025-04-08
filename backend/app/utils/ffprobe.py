@@ -2,9 +2,9 @@
 FFprobe utility functions.
 """
 
+import json
 import os
 import subprocess
-import json
 
 
 def probe(abs_file_path: str) -> dict:
