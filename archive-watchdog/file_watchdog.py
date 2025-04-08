@@ -20,7 +20,10 @@ The final syntax will be `{STATION_ID}-YYYY-MM-DDTHH:MM:SSZ.mp3`, or
 detected).
 
 If a file is renamed to `.mp3` but does not match the expected filename
-format, it is moved to an "unmatched" directory (defined in config).
+format, it is moved to an "unmatched" directory (defined in config),
+which is a subdirectory of the archive directory. This is useful for
+debugging and manual review of files that do not conform to the
+expected naming convention.
 
 After moving the file, the watchdog script notifies the backend via
 RabbitMQ so that it can kick off its business logic.
@@ -31,6 +34,7 @@ import hashlib
 import logging
 import os
 import re
+import signal
 import sys
 import time
 from contextlib import contextmanager
@@ -284,11 +288,21 @@ def main():
     """
     event_handler = ArchiveHandler()
     observer = Observer()
-    # `recursive=False` to only watch the top-level directory of the archive.
     observer.schedule(event_handler, ARCHIVE_DIR, recursive=False)
-    observer.start()
 
+    def handle_signal(signum, _frame):
+        logging.info("Received signal %d - stopping observer gracefully", signum)
+        observer.stop()
+        RABBITMQ_CLIENT.close()
+        sys.exit(0)
+
+    # Register for SIGTERM and SIGINT
+    signal.signal(signal.SIGTERM, handle_signal)
+    signal.signal(signal.SIGINT, handle_signal)
+
+    observer.start()
     logging.info("Watching for `.temp` -> `.mp3` renames in `%s`", ARCHIVE_DIR)
+
     try:
         while True:
             time.sleep(1)
@@ -296,8 +310,9 @@ def main():
         logging.info("Stopping observer from keyboard interrupt")
         observer.stop()
     finally:
-        RABBITMQ_CLIENT.close()  # Ensure RabbitMQ connection is closed properly
+        RABBITMQ_CLIENT.close()
         logging.debug("RabbitMQ connection closed.")
+
     observer.join()
 
 
