@@ -1,3 +1,23 @@
+x-common-env: &common-env
+  TZ: ${TZ}
+  STATION_ID: ${STATION_ID?Variable not set}
+  STREAM_URL: ${STREAM_URL?Variable not set}
+  ARCHIVE_DIR: ${ARCHIVE_DIR?Variable not set}
+  UNMATCHED_DIR: ${UNMATCHED_DIR?Variable not set}
+  SEGMENT_DURATION_SECONDS: ${SEGMENT_DURATION_SECONDS?Variable not set}
+
+x-rabbitmq-env: &rabbitmq-env
+  RABBITMQ_HOST: ${RABBITMQ_HOST?Variable not set}}
+  RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE?Variable not set}}
+  RABBITMQ_QUEUE: ${RABBITMQ_QUEUE?Variable not set}}
+
+x-db-env: &db-env
+  POSTGRES_HOST: ${POSTGRES_HOST?Variable not set}
+  POSTGRES_PORT: ${POSTGRES_PORT?Variable not set}
+  POSTGRES_DB: ${POSTGRES_DB?Variable not set}
+  POSTGRES_USER: ${POSTGRES_USER?Variable not set}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD?Variable not set}
+
 services:
   recording:
     build:
@@ -7,11 +27,7 @@ services:
     volumes:
       - ./archive:/archive # Mount the archive directory from the project folder
     environment:
-      - STATION_ID
-      - STREAM_URL
-      - ARCHIVE_DIR
-      - SEGMENT_DURATION_SECONDS
-      - TZ
+      <<: *common-env
     logging:
       driver: "json-file"
       options:
@@ -19,28 +35,24 @@ services:
         max-file: "3" # Keep last 3 rotated log files
     networks:
       - wbor-network
-  
+
   watchdog:
     build:
       context: ./archive-watchdog
     container_name: wbor-archiver-watchdog
-    restart: always # Like the recorder, ensure continuous monitoring
+    restart: always
     volumes:
       - ./archive:/archive
     environment:
-      - ARCHIVE_DIR
-      - UNMATCHED_DIR
-      - SEGMENT_DURATION_SECONDS
-      - TZ
-      - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_EXCHANGE=wbor-archiver-exchange
-      - RABBITMQ_QUEUE=recording-segments
+      <<: *common-env
+      <<: *rabbitmq-env
     logging:
       driver: "json-file"
       options:
         max-size: "50m" # Max log file size before rotation (50MB)
         max-file: "3" # Keep last 3 rotated log files
     depends_on:
+      # RabbitMQ is needed to send messages
       rabbitmq:
         condition: service_healthy
     networks:
@@ -51,12 +63,12 @@ services:
     container_name: wbor-archiver-mq
     restart: always
     ports:
-      - "15672:15672"  # Management UI
+      - "15672:15672" # Management UI
     environment:
-      - RABBITMQ_DEFAULT_USER=guest
-      - RABBITMQ_DEFAULT_PASS=guest
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER?Variable not set}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD?Variable not set}
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
       interval: 30s
       timeout: 30s
       retries: 5
@@ -69,26 +81,20 @@ services:
     container_name: wbor-archiver-backend
     restart: unless-stopped
     volumes:
-      - ./archive:/archive:ro  # The API only needs read-only permission
+      - ./archive:/archive:ro # The API only needs read-only permission
     ports:
-      - "8000:8000"  # For local development
+      - "8000:8000" # For local development
     environment:
-      - STATION_ID
-      - ARCHIVE_DIR
-      - UNMATCHED_DIR
-      - SEGMENT_DURATION_SECONDS
-      - TZ
-      - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_EXCHANGE=wbor-archiver-exchange
-      - RABBITMQ_QUEUE=recording-segments
-      - DATABASE_URL
+      <<: *common-env
+      <<: *rabbitmq-env
+      <<: *db-env
     depends_on:
       rabbitmq:
         condition: service_healthy
       database:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/ || exit 1"]
+      test: [ "CMD-SHELL", "curl -f http://localhost/api/ || exit 1" ]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -96,40 +102,39 @@ services:
     networks:
       - wbor-network
 
-  # If renaming this service (or db name), update DATABASE_URL in the .env file!
   database:
-    image: postgres:15
+    image: postgres:17
     container_name: wbor-archiver-db
     build:
       context: ./database
+    restart: always
     healthcheck:
       test: [ "CMD", "pg_isready", "-U", "postgres" ]
       interval: 10s
-      timeout: 5s
       retries: 5
+      start_period: 30s
+      timeout: 10s
     volumes:
       - postgres_data:/var/lib/postgresql/data # Persistent storage for the database data (allows data to outlive container restarts/builds)
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql # Initialize the database with our custom SQL init script
       - ./database/sample_data/images:/media
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: archive_db
-    env_file:
-      - .env
+      <<: *db-env
     networks:
       - wbor-network
 
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: pgadmin
-    env_file:
-      - .env
     volumes:
       # Pre-configured servers.json file
       # Don't forget to change the file if any changes are made to the database service
       - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL?Variable not set}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD?Variable not set}
     depends_on:
+      # pgAdmin needs the database to be up and running to connect
       database:
         condition: service_healthy
     networks:
@@ -164,7 +169,7 @@ services:
       - backend
       # - frontend
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:80/ || exit 1"]
+      test: [ "CMD-SHELL", "curl -f http://localhost:80/ || exit 1" ]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -173,7 +178,8 @@ services:
       - wbor-network
 
 volumes:
-  postgres_data: # Define a persistent volume for the PostgreSQL database (to outlive container restarts)
+  postgres_data:
+    # Persistent volume so the database can outlive container restarts
 
 networks:
   wbor-network:

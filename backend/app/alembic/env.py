@@ -8,16 +8,24 @@ This file sets up configurations for offline/online migrations.
 import os
 import sys
 from logging.config import fileConfig
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-from alembic import context
-from dotenv import load_dotenv
 
-from database import Base
+from alembic import context
+from app.core.database import Base
+from dotenv import load_dotenv
+from sqlalchemy import engine_from_config, pool
 
 load_dotenv()
 try:
-    DATABASE_URL = os.getenv("DATABASE_URL").strip()
+    POSTGRES_HOST = os.getenv("POSTGRES_HOST").strip()
+    POSTGRES_PORT = os.getenv("POSTGRES_PORT").strip()
+    POSTGRES_DB = os.getenv("POSTGRES_DB").strip()
+    POSTGRES_USER = os.getenv("POSTGRES_USER").strip()
+    POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD").strip()
+
+    DATABASE_URL = (
+        f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}"
+        f"@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+    )
 except (ValueError, AttributeError, TypeError) as e:
     sys.exit(1)
 

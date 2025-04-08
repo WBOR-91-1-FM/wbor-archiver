@@ -1,22 +1,14 @@
 """
-Define the database models for the application.
+Segment model for the archive.
+This model represents a recording segment (file) in the archive.
 """
 
-from sqlalchemy import (
-    Column,
-    Integer,
-    String,
-    Boolean,
-    DateTime,
-    ForeignKey,
-    Text,
-    text,
-)
+from app.core.database import Base
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, text
 from sqlalchemy.orm import relationship
-from database import Base
 
 
-class Segment(Base):
+class Segment(Base):  # pylint: disable=too-few-public-methods
     """
     Represents a recording segment (file) in the archive.
     """
@@ -52,23 +44,3 @@ class Segment(Base):
 
     # Relationship to logs
     download_logs = relationship("DownloadLog", back_populates="segment")
-
-
-class DownloadLog(Base):
-    """
-    Mirrors the 'download_logs' table from init.sql.
-    Tracks whenever a segment is downloaded / played back.
-    """
-
-    __tablename__ = "download_logs"
-
-    id = Column(Integer, primary_key=True, index=True)
-    segment_id = Column(Integer, ForeignKey("segments.id"), nullable=False)
-    downloaded_at = Column(
-        DateTime(timezone=True), server_default=text("NOW()"), nullable=False
-    )
-    ip_address = Column(String, nullable=True)
-    user_agent = Column(String, nullable=True)
-
-    # Relationship back to Segment
-    segment = relationship("Segment", back_populates="download_logs")
