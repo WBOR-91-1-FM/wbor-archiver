@@ -34,9 +34,19 @@ def parse_timestamp(timestamp: Dict) -> datetime:
     )
 
 
+def build_expected_filename(timestamp: Dict) -> str:
+    """
+    Build the expected filename based on the provided timestamp.
+    """
+    return (
+        f"WBOR-{timestamp['year']}-{timestamp['month']}-{timestamp['day']}"
+        f"T{timestamp['hour']}:{timestamp['minute']}:{timestamp['second']}Z.mp3"
+    )
+
+
 def extract_ffprobe_metadata(ffprobe_data: dict) -> dict:
     """
-    Extract bit_rate, sample_rate, and tag-based fields from ffprobe JSON.
+    Extract relevant metadata from the ffprobe output.
     """
     stream = ffprobe_data["streams"][0] if ffprobe_data.get("streams") else {}
     format_info = ffprobe_data.get("format", {})
@@ -55,31 +65,26 @@ def extract_ffprobe_metadata(ffprobe_data: dict) -> dict:
         # Prefer the format-level encoder (e.g., "Lavf59.27.100")
         "encoder": format_tags.get("encoder") or tags.get("encoder"),
         # Duration in seconds (str -> float)
+        # No fallback as there should always be a duration
         "duration": float(format_info.get("duration")),
     }
 
 
 def process_new_recording(
-    filename: str, timestamp: Dict, archive_base: Path = settings.ARCHIVE_BASE
+    filename: str,
+    timestamp: Dict,
+    archive_base: Path = settings.ARCHIVE_BASE,
 ) -> None:
     """
-    Validate the file, compute hashes, gather metadata, and save a new
-    record in the DB.
+    Validate and process a new recording.
     """
-    # Build the expected filename
-    expected_filename = (
-        f"WBOR-{timestamp['year']}-{timestamp['month']}-{timestamp['day']}"
-        f"T{timestamp['hour']}:{timestamp['minute']}:{timestamp['second']}Z.mp3"
-    )
+    expected_filename = build_expected_filename(timestamp)
     if filename != expected_filename:
         logger.error(
-            "Filename `%s` does not match expected format: `%s`",
-            filename,
-            expected_filename,
+            "Filename mismatch: got `%s`, expected `%s`", filename, expected_filename
         )
         return
 
-    # Construct the file path
     file_path = (
         archive_base
         / timestamp["year"]
@@ -88,34 +93,38 @@ def process_new_recording(
         / filename
     )
 
-    # Compute hash and gather ffprobe data
-    sha256_hash = hash_file(str(file_path))
-    ffprobe_data = get_ffprobe_output(str(file_path))
+    if not file_path.exists():
+        logger.error("File not found at expected path: `%s`", file_path)
+        return
 
-    # Parse timestamp and ffprobe metadata
-    dt_obj = parse_timestamp(timestamp)
+    sha256 = hash_file(str(file_path))
+    ffprobe_data = get_ffprobe_output(str(file_path))
+    if not ffprobe_data:
+        logger.error("ffprobe failed for file `%s`", file_path)
+        return
+
+    dt_start = parse_timestamp(timestamp)
     metadata = extract_ffprobe_metadata(ffprobe_data)
 
-    # The nominal start_ts is exactly what's in the filename (dt_obj).
-    # We can compute end_ts based on the duration from ffprobe.
-    duration_seconds = metadata.pop("duration")
-    end_dt = dt_obj + timedelta(seconds=duration_seconds) if duration_seconds else None
+    duration = metadata.pop("duration")
+    dt_end = dt_start + timedelta(seconds=duration) if duration else None
+
+    segment = Segment(
+        filename=filename,
+        archived_path=str(file_path),
+        start_ts=dt_start,
+        end_ts=dt_end,  # e.g. 4:34:53.9902 if ~5 minutes
+        sha256_hash=sha256,
+        **metadata,  # bit_rate, sample_rate, etc.
+    )
 
     db = database.SessionLocal()
     try:
-        new_rec = Segment(
-            filename=filename,
-            archived_path=str(file_path),
-            start_ts=dt_obj,  # e.g. 4:29:54 if that's the filename
-            end_ts=end_dt,  # e.g. 4:34:53.9902 if ~5 minutes
-            sha256_hash=sha256_hash,
-            **metadata,  # bit_rate, sample_rate, etc.
-        )
-        db.add(new_rec)
+        db.add(segment)
         db.commit()
         logger.info("Successfully inserted new segment: `%s`", filename)
     except Exception as ex:  # pylint: disable=broad-except
         db.rollback()
-        logger.error("Error inserting record for file `%s`: %s", filename, ex)
+        logger.error("DB insert failed for `%s`: %s", filename, ex)
     finally:
         db.close()
