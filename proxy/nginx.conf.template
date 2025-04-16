@@ -51,6 +51,22 @@ http {
     access_log /var/log/nginx/access.log combined;
     error_log /var/log/nginx/error.log warn;
 
+    upstream frontend {
+        server ${FRONTEND_HOST};
+    }
+
+    upstream backend {
+        server ${BACKEND_HOST}:${BACKEND_PORT};
+    }
+
+    upstream rmq {
+        server ${RMQ_HOST}:15672;
+    }
+
+    upstream pgadmin {
+        server ${PGADMIN_HOST};
+    }
+
     server {
         # Listen on port 80 for HTTP requests.
         listen 80 default_server;
@@ -74,7 +90,7 @@ http {
 
         # Main location block to proxy requests to the frontend application.
         location / {
-            proxy_pass http://wbor-archiver-frontend;
+            proxy_pass http://frontend;
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection "upgrade";
@@ -97,7 +113,7 @@ http {
 
         # # Hot Module Replacement WebSocket support
         # location /ws {
-        #     proxy_pass http://wbor-archiver-frontend:3000/ws;
+        #     proxy_pass http://frontend:3000/ws;
         #     proxy_http_version 1.1;
         #     proxy_set_header Upgrade $http_upgrade;
         #     proxy_set_header Connection "upgrade";
@@ -108,20 +124,17 @@ http {
 
         #     # Bypass proxy cache for WebSocket connections.
         #     proxy_cache_bypass $http_upgrade;
-
         #     # Increase proxy timeouts for WebSocket connections.
         #     proxy_connect_timeout 60s;
         #     proxy_send_timeout 3600s;
         #     proxy_read_timeout 3600s;
-
         #     # Buffer settings tailored for WebSocket traffic.
         #     proxy_buffers 8 32k;
         #     proxy_buffer_size 64k;
         # }
-
         # Proxy API requests to the backend server.
         location /api/ {
-            proxy_pass http://wbor-archiver-backend:8000;
+            proxy_pass http://backend;
             proxy_http_version 1.1;
 
             # Preserve original headers.
@@ -158,7 +171,7 @@ http {
 
         # Swagger UI API documentation.
         location /docs/ {
-            proxy_pass http://wbor-archiver-backend:8000/docs/;
+            proxy_pass http://backend/docs/;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -166,7 +179,7 @@ http {
 
         # OpenAPI JSON schema for the API.
         location = /openapi.json {
-            proxy_pass http://wbor-archiver-backend:8000/openapi.json;
+            proxy_pass http://backend/openapi.json;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -177,20 +190,20 @@ http {
             rewrite ^ $request_uri;
             rewrite ^/rmq/api/(.*) /api/$1 break;
             return 400;
-            proxy_pass http://wbor-archiver-mq:15672$uri;
-            proxy_buffering                    off;
-            proxy_set_header Host              $http_host;
-            proxy_set_header X-Real-IP         $remote_addr;
-            proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_pass http://rmq$uri;
+            proxy_buffering off;
+            proxy_set_header Host $http_host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
         }
 
         location /rmq/ {
-            proxy_pass http://wbor-archiver-mq:15672/;
-            proxy_buffering                    off;
-            proxy_set_header Host              $http_host;
-            proxy_set_header X-Real-IP         $remote_addr;
-            proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_pass http://rmq/;
+            proxy_buffering off;
+            proxy_set_header Host $http_host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
         }
 
@@ -198,7 +211,6 @@ http {
             return 301 /rmq/;
         }
 
-        # Redirect to ensure trailing slash
         location = /rmq {
             return 301 /rmq/;
         }
@@ -210,25 +222,17 @@ http {
 
         # Proxy pgAdmin requests to the pgAdmin service.
         location ^~ /pga/ {
-            proxy_pass http://pgadmin:80/;
-
-            # Preserve original headers.
+            proxy_pass http://pgadmin/;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
             proxy_set_header X-Script-Name /pga;
-
-            # Increase proxy timeouts for pgAdmin.
             proxy_connect_timeout 60s;
             proxy_send_timeout 60s;
             proxy_read_timeout 60s;
-
-            # Buffer settings for pgAdmin.
             proxy_buffers 16 64k;
             proxy_buffer_size 128k;
-
-            # Optional security headers.
             add_header X-Content-Type-Options nosniff;
             add_header X-Frame-Options SAMEORIGIN;
             add_header X-XSS-Protection "1; mode=block";

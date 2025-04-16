@@ -1,4 +1,15 @@
 FROM nginx:stable-alpine
-COPY nginx.conf /etc/nginx/nginx.conf
+
+# Copy the templated Nginx configuration
+COPY nginx.conf.template /etc/nginx/nginx.conf.template
+
+# Copy the entrypoint script that substitutes environment variables and starts Nginx
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+
+# Make the entrypoint script executable
+RUN chmod +x /docker-entrypoint.sh
+
 EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+
+# Use the custom entrypoint to generate the final nginx.conf and launch Nginx
+CMD ["/docker-entrypoint.sh"]
