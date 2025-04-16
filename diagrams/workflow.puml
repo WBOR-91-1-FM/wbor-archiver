@@ -2,22 +2,22 @@
 
 start
 
-:Recording Service captures audio;
-:Segment audio with FFmpeg;
-:Store segment in Archive Directory;
+:Recording Service captures audio segments;
+:Write segments to Archive Directory;
 
 if (Segment completed?) then (yes)
-    :Archive Watchdog organizes segment in appropriate subdirectory;
-    :Notify Backend API;
-    :Index segment metadata in Postgres;
+    :Watchdog organizes segment in appropriate subdirectory (YYYY/MM/DD);
+    :Watchdog notifies Backend via RabbitMQ;
+    :Backend indexes segment & metadata in Postgres;
 endif
 
 :User requests a recording;
+:Copy segment(s) to temporary directory on host disk;
 if (Single segment requested?) then (yes)
-    :Serve recording directly;
+    :Serve download;
 else (no)
     :Concatenate segments with FFmpeg;
-    :Serve gapless recording;
+    :Serve gapless recording from host disk;
 endif
 
 stop
