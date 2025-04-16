@@ -59,23 +59,17 @@ logging.getLogger("watchdog.observers.inotify_buffer").setLevel(logging.WARNING)
 load_dotenv()
 
 try:
-    # Ensure environment vars are stripped of leading/trailing spaces
     ARCHIVE_DIR = os.getenv("ARCHIVE_DIR").strip()
     UNMATCHED_DIR = os.getenv("UNMATCHED_DIR").strip()
-
-    # Parse and validate SEGMENT_DURATION_SECONDS
     segment_duration_str = os.getenv("SEGMENT_DURATION_SECONDS").strip()
     if not segment_duration_str.isdigit():
         raise ValueError(
             f"SEGMENT_DURATION_SECONDS must be an integer, got '{segment_duration_str}'"
         )
     SEGMENT_DURATION_SECONDS = int(segment_duration_str)
-
-    # Use UTC timezone for consistency
     TZ = pytz.UTC
-
     logging.debug(
-        "Configuration loaded successfully:"
+        "Configuration loaded successfully: "
         "ARCHIVE_DIR=`%s`, SEGMENT_DURATION_SECONDS=`%s`, UNMATCHED_DIR=`%s`",
         ARCHIVE_DIR,
         SEGMENT_DURATION_SECONDS,
