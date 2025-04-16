@@ -51,7 +51,6 @@ services:
         max-size: "50m" # Max log file size before rotation (50MB)
         max-file: "3" # Keep last 3 rotated log files
     depends_on:
-      # RabbitMQ is needed to send messages
       rabbitmq:
         condition: service_healthy
     networks:
@@ -61,8 +60,6 @@ services:
     image: "rabbitmq:3-management"
     container_name: wbor-archiver-mq
     restart: always
-    ports:
-      - "15672:15672" # Management UI
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER?Variable not set}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS?Variable not set}
@@ -82,7 +79,7 @@ services:
     container_name: wbor-archiver-backend
     restart: unless-stopped
     volumes:
-      - ${ARCHIVE_DIR?./archive}:/archive:ro # The API only needs read-only permission
+      - ${ARCHIVE_DIR?./archive}:/archive:ro # API needs read-only permission
       - ./backend:/app
     environment:
       <<: [ *common-env, *rabbitmq-env, *db-env ]
@@ -115,7 +112,7 @@ services:
       timeout: 10s
     volumes:
       - postgres_data:/var/lib/postgresql/data # Persistent storage for the database data (allows data to outlive container restarts/builds)
-      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql # Initialize the database with our custom SQL init script
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql # Initialize the database with custom SQL init script
       - ./database/sample_data/images:/media
     environment:
       <<: *db-env
@@ -127,35 +124,34 @@ services:
     container_name: pgadmin
     volumes:
       # Pre-configured servers.json file
-      # Don't forget to change the file if any changes are made to the database service
+      # (Don't forget to change the file if any changes are made to the database service)
       - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL?Variable not set}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD?Variable not set}
     depends_on:
-      # pgAdmin needs the database to be up and running to connect
       database:
         condition: service_healthy
     networks:
       - wbor-network
 
-  # frontend:
-  #   build:
-  #     context: ./frontend
-  #   container_name: wbor-archiver-frontend
-  #   restart: unless-stopped
-  #   ports:
-  #     - "3000:80" # Direct local access for debugging
-  # depends_on:
-  #   - backend
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "curl -f http://localhost:80/ || exit 1"]
-  #     interval: 30s
-  #     timeout: 5s
-  #     retries: 3
-  #     start_period: 10s
-  #   networks:
-  #     - wbor-network
+  frontend:
+    build:
+      context: ./frontend
+    container_name: wbor-archiver-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80" # Direct local access for debugging
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - wbor-network
 
   proxy:
     build:
@@ -166,7 +162,7 @@ services:
       - "${CONTAINER_PORT}:80"
     depends_on:
       - backend
-      # - frontend
+      - frontend
     healthcheck:
       test: [ "CMD-SHELL", "curl -f http://localhost:80/ || exit 1" ]
       interval: 30s

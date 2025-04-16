@@ -1,12 +1,12 @@
 # wbor-archiver
 
-24/7 audio logger that makes recordings of a broadcast on `n`-minute intervals. Each recording is named according to the time it began capturing (e.g., `WBOR-2025-02-14T00:35:01Z.mp3` - all in ISO 8601 UTC format). Gapless playback is possible such that two recordings can be concatenated with no discernable "change-over", allowing for the creation of arbitrarily-length recordings.
+24/7 audio logger that makes recordings of a broadcast on `n`-minute intervals. Gapless playback is possible such that many recordings can be seamlessly concatenated, allowing for the creation of arbitrary-length recordings.
 
 ## System Architecture
 
 Dedicated containers for each service. Compatible with both Docker and Podman (what we use).
 
-* **Recording service (Python, FFmpeg):** Audio acquisition and segmenting. Files are named dynamically indicating timestamp covered. After a segment is done writing, it drops the file into a specified archive directory.
+* **Recording service (Python, FFmpeg):** Audio acquisition and segmenting. Files are named dynamically indicating timestamp covered (e.g., `WBOR-2025-02-14T00:35:01Z.mp3` - all in ISO 8601 UTC format). Segments are written to a specified archive directory.
 * **Archive watchdog (Python):** Organizes files into the appropriate subdirectory. Informs the backend that a new segment is ready for indexing.
 * **Backend & API (Python, FastAPI, FFmpeg):** Serves recordings. Admin endpoints available to un-publish segments as needed. Depending on the request, will concatenate segments to produce a single, gapless recording.
 * **Database (Postgres)**: Store segment index and metadata info.
