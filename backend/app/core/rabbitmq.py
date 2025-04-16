@@ -1,5 +1,7 @@
 """
-Module to handle RabbitMQ message consumption and processing.
+Module to handle RabbitMQ message consumption and processing. This
+module exists during the lifespan of the application and is responsible
+for listening to messages from the RabbitMQ queue (new segments).
 """
 
 import json
@@ -14,14 +16,15 @@ from app.services.record_service import process_new_recording
 logger = configure_logging(__name__)
 
 
-def _on_message(ch, method, _properties, body, archive_base):
+def _on_message(ch, method, _properties, body):
     logger.debug("Received message: `%s`", body)
     try:
         payload = json.loads(body)
+
+        # Business logic; may want to be decoupled in the future
         filename = payload.get("filename")
         timestamp = payload.get("timestamp", {})
-
-        process_new_recording(filename, timestamp, archive_base)
+        process_new_recording(filename, timestamp)
 
     except Exception as e:  # pylint: disable=broad-except
         logger.error("Processing error: %s", e)
@@ -29,7 +32,7 @@ def _on_message(ch, method, _properties, body, archive_base):
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
 
-def _rabbitmq_consumer(stop_event: threading.Event, archive_base):
+def _rabbitmq_consumer(stop_event: threading.Event):
     """
     RabbitMQ consumer that listens for messages on a specified queue.
     The consumer forwards messages to the `_on_message` function for
@@ -53,9 +56,7 @@ def _rabbitmq_consumer(stop_event: threading.Event, archive_base):
             channel.basic_qos(prefetch_count=1)
             channel.basic_consume(
                 queue=settings.RABBITMQ_QUEUE,
-                on_message_callback=lambda ch, method, props, body: _on_message(
-                    ch, method, props, body, archive_base
-                ),
+                on_message_callback=_on_message,
                 auto_ack=False,
             )
             logger.info("RabbitMQ consumer connected. Waiting for messages...")
@@ -70,14 +71,14 @@ def _rabbitmq_consumer(stop_event: threading.Event, archive_base):
                 pass
 
 
-def start_consumer_thread(archive_base=settings.ARCHIVE_BASE):
+def start_consumer_thread():
     """
     Start the RabbitMQ consumer thread. Runs in the background and can
     be stopped by setting the `stop_event`.
     """
     stop_event = threading.Event()
     consumer_thread = threading.Thread(
-        target=_rabbitmq_consumer, args=(stop_event, archive_base), daemon=False
+        target=_rabbitmq_consumer, args=(stop_event), daemon=False
     )
     consumer_thread.start()
     logger.info("Started RabbitMQ consumer thread.")

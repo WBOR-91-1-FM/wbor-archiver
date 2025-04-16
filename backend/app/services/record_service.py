@@ -3,13 +3,14 @@ Module to handle the processing of new recordings.
 
 Processing includes:
 - Computing the SHA-256 hash of the file.
-- Storing the metadata in the database.
+- Storing segment metadata in the database.
 """
 
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict
 
+from app.config import settings
 from app.core import database
 from app.core.logging import configure_logging
 from app.models.segment import Segment
@@ -58,7 +59,9 @@ def extract_ffprobe_metadata(ffprobe_data: dict) -> dict:
     }
 
 
-def process_new_recording(filename: str, timestamp: Dict, archive_base: Path) -> None:
+def process_new_recording(
+    filename: str, timestamp: Dict, archive_base: Path = settings.ARCHIVE_BASE
+) -> None:
     """
     Validate the file, compute hashes, gather metadata, and save a new
     record in the DB.
