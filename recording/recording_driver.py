@@ -180,8 +180,8 @@ def business_logic(log_line: str, active_segment: str):
 
 class Recorder:
     """
-    Instantiate the Recorder class to start capturing the stream.
-    The class handles the FFmpeg process, signal handling, and
+    Instantiate the Recorder class to capture the stream.
+    This class handles the FFmpeg process, signal handling, and
     segmenting logic.
     """
 
@@ -191,17 +191,20 @@ class Recorder:
 
     def handle_signal(self, signum, _frame):
         """
-        Signal handler that attempts graceful shutdown.
+        Signal handler that attempts a graceful shutdown.
         """
         logging.info("Received signal `%d` - initiating graceful shutdown", signum)
         if self.ffmpeg_process and self.ffmpeg_process.poll() is None:
-            logging.info("Sending SIGTERM to FFmpeg process")
-            self.ffmpeg_process.terminate()
+            logging.info("Sending SIGTERM to FFmpeg process group")
+            os.killpg(self.ffmpeg_process.pid, signal.SIGTERM)
             try:
-                self.ffmpeg_process.wait(timeout=10)
+                # Use a shorter timeout to exit faster
+                self.ffmpeg_process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                logging.warning("FFmpeg did not exit after SIGTERM - sending SIGKILL")
-                self.ffmpeg_process.kill()
+                logging.warning(
+                    "FFmpeg did not exit after SIGTERM - sending SIGKILL to process group"
+                )
+                os.killpg(self.ffmpeg_process.pid, signal.SIGKILL)
         sys.exit(0)
 
     def ffmpeg_log_handler(self):
@@ -299,7 +302,7 @@ class Recorder:
             sys.exit(1)
 
         logging.debug(
-            "Segment duration set to: `%d` seconds (%.2f minutes)",
+            "Segment duration set to: `%d` seconds (`%.1f` minutes)",
             SEGMENT_DURATION_SECONDS,
             SEGMENT_DURATION_SECONDS / 60,
         )
@@ -316,14 +319,15 @@ class Recorder:
                 stderr=subprocess.PIPE,
                 text=True,
                 universal_newlines=True,
-                bufsize=1,  # Line buffering for realtime log processing
+                bufsize=1,  # Line buffering for realtime processing
+                start_new_session=True,  # Launch in a new process group
             )
 
-            # Daemon true so it will exit when the main thread exits
+            # Start log handler thread (daemon so it exits when the main thread does)
             t = threading.Thread(target=self.ffmpeg_log_handler, daemon=True)
             t.start()
 
-            # Wait for the FFmpeg process to exit
+            # Wait for FFmpeg to finish
             ffmpeg_returncode = self.ffmpeg_process.wait()
             if ffmpeg_returncode != 0:
                 logging.error(
@@ -358,5 +362,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logging.info("Process interrupted by user. Exiting gracefully.")
     except (OSError, subprocess.SubprocessError) as e:
-        logging.error("Unexpected error: %s", e)
+        logging.error("Unexpected error: `%s`", e)
         sys.exit(1)
