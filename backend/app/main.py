@@ -1,8 +1,10 @@
 """
-The backend is connected to the archive file system (read-only) and
-provides an endpoints to list and download recordings. For downloads
-containing multiple Segments, we concatenate them together into a single
-gapless recording.
+The backend is connected to the archive file system (r/o), providing
+endpoints to list and download recordings. Simultaneously, it listens to
+a message queue for new segments. When a new segment is detected, it
+indexes segment metadata and notifies the frontend via WebSocket.
+
+Requests spanning segments require concatenation for gapless playback.
 
 Absolute paths should not be used. Instead, use `ARCHIVE_BASE` to refer
 to the archive root directory.
