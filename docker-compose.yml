@@ -66,10 +66,11 @@ services:
     # This healthcheck could be improved since I've noticed that some
     # containers e.g. watchdog still have trouble connecting initially
     healthcheck:
-      test: ["CMD-SHELL", "rabbitmq-diagnostics await_cluster_status --timeout 30"]
-      interval: 30s
-      timeout: 30s
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_port_connectivity"]
+      interval: 10s
+      timeout: 10s
       retries: 5
+      start_period: 10s
     networks:
       - wbor-network
 
